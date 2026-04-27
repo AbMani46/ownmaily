@@ -148,11 +148,78 @@ PORT=4400
 
 ---
 
-## Session 2 — Next (Schema + SQLC + Auth)
+## Session 2 — DB Schema + sqlc (complete)
 
-Ready to begin:
+### What was built
 
-- Full DB schema (subscribers, lists, campaigns, jobs, settings, api_keys tables)
-- SQLC queries and generated Go code
-- JWT auth middleware + login endpoint
-- API key middleware
+| Item                                                                                               | Status |
+| -------------------------------------------------------------------------------------------------- | ------ |
+| `db/migrations/000002_schema.up.sql` — full schema (14 tables + indexes + seed)                    | Done   |
+| `db/migrations/000002_schema.down.sql` — drops all tables in reverse dependency order              | Done   |
+| `db/queries/settings.sql` — GetSettings, UpdateSettings, SetSetupComplete                          | Done   |
+| `db/queries/owner.sql` — CreateOwner, GetOwner, UpdateOwnerPassword                                | Done   |
+| `db/queries/api_keys.sql` — CreateAPIKey, GetLatestAPIKey, DeleteAllAPIKeys                        | Done   |
+| `db/queries/subscribers.sql` — full CRUD, search, paginated list, upsert                           | Done   |
+| `db/queries/suppressed_emails.sql` — AddSuppression, IsSuppressed, CRUD                            | Done   |
+| `db/queries/lists.sql` — CRUD, list-subscriber junction, count                                     | Done   |
+| `db/queries/tags.sql` — CRUD, subscriber-tag junction, count                                       | Done   |
+| `db/queries/campaigns.sql` — CRUD, status updates, scheduled due query                             | Done   |
+| `db/queries/send_jobs.sql` — CRUD, increment counters, pending list                                | Done   |
+| `db/queries/campaign_recipients.sql` — CRUD, BulkCreateCampaignRecipients (copyfrom), pending list | Done   |
+| `db/queries/opens.sql` — RecordOpen (upsert ignore), count, hasOpened, list                        | Done   |
+| `db/queries/clicks.sql` — RecordClick, count, per-link breakdown, list                             | Done   |
+| `internal/sqlc/` — 15 generated .go files (sqlc v1.30.0)                                           | Done   |
+
+### Verification
+
+| Check             | Result                                                     |
+| ----------------- | ---------------------------------------------------------- |
+| `task migrate-up` | Pass — 2/u schema (69ms)                                   |
+| `\dt` in psql     | All 14 tables present                                      |
+| settings row seed | Pass — id=true, setup_complete=false, site_name='OwnMaily' |
+| `task sqlc-gen`   | Pass — 15 files generated, no errors                       |
+| `task build`      | Pass — compiles cleanly                                    |
+
+### Tables created
+
+`settings`, `owner`, `api_keys`, `subscribers`, `suppressed_emails`, `lists`, `list_subscribers`, `tags`, `subscriber_tags`, `campaigns`, `send_jobs`, `campaign_recipients`, `opens`, `clicks`
+
+### Deviations from plan
+
+None — all tables, query files, and functions match the spec exactly.
+
+---
+
+## Session 3 — Auth (complete)
+
+### What was built
+
+| Item                                                                     | Status |
+| ------------------------------------------------------------------------ | ------ |
+| `internal/auth/jwt.go` — GenerateToken, ValidateToken, Claims struct     | Done   |
+| `internal/auth/password.go` — HashPassword (cost 12), CheckPassword      | Done   |
+| `internal/auth/apikey.go` — GenerateAPIKey, KeyPrefix, HashKey, CheckKey | Done   |
+| `internal/middleware/auth.go` — RequireJWT, RequireAPIKey, RequireAuth   | Done   |
+| `internal/handler/helpers.go` — writeJSON, writeError, readJSON          | Done   |
+| `internal/handler/auth.go` — Login, Logout, Me handlers                  | Done   |
+| `cmd/server/main.go` — wired sqlc.Queries, mounted all auth routes       | Done   |
+| Dependencies: golang-jwt/jwt/v5, golang.org/x/crypto                     | Done   |
+
+### Verification
+
+| Check                                      | Result                                                         |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `task build`                               | Pass — compiles clean                                          |
+| `curl localhost:4400/health`               | 200 `{"status":"ok"}` — unprotected, still works               |
+| `curl localhost:4400/api/auth/me`          | 401 `{"error":"unauthorized","message":"missing token"}`       |
+| `POST /api/auth/login` with wrong password | 401 `{"error":"unauthorized","message":"invalid credentials"}` |
+
+Full login flow (end-to-end with real owner row) deferred to Session 11 (setup wizard seeds owner).
+
+### Deviations from plan
+
+None — all functions, routes, and middleware match the spec exactly.
+
+---
+
+## Session 4 — Next
