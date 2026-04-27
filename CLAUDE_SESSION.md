@@ -4,13 +4,13 @@
 
 ### What was verified and fixed
 
-| Check | Result |
-|---|---|
-| `sqlc.yml` configured correctly | Pass |
-| `Taskfile.yml` has all required tasks | Fixed — was missing dev, build, migrate-up, migrate-down, docker-up, docker-down |
-| `golang-migrate` finds migrations dir | Pass — `db/migrations` wired correctly |
-| Docker Compose starts and Postgres reachable | Fixed — docker-compose.yml was empty; Postgres 18 volume mount path fixed |
-| Test migration runs up and down cleanly | Pass |
+| Check                                        | Result                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `sqlc.yml` configured correctly              | Pass                                                                             |
+| `Taskfile.yml` has all required tasks        | Fixed — was missing dev, build, migrate-up, migrate-down, docker-up, docker-down |
+| `golang-migrate` finds migrations dir        | Pass — `db/migrations` wired correctly                                           |
+| Docker Compose starts and Postgres reachable | Fixed — docker-compose.yml was empty; Postgres 18 volume mount path fixed        |
+| Test migration runs up and down cleanly      | Pass                                                                             |
 
 ### Issues found and fixed
 
@@ -30,28 +30,28 @@
 
 ### What was built
 
-| Item | Status |
-|---|---|
-| Go dependencies (chi, pgx/v5, godotenv, golang-migrate) | Done |
-| `internal/config/config.go` — Config struct + Load() | Done |
-| `internal/db/db.go` — Connect() with pgxpool, max 10 conns | Done |
-| `internal/db/migrate.go` — RunMigrations() via iofs driver | Done |
-| `db/embed.go` — embeds db/migrations FS for migration runner | Done |
-| Migration 000001_init (replaced 000001_setup) | Done |
-| `cmd/server/main.go` — full server wiring | Done |
-| `frontend/index.html` — placeholder | Done |
-| All internal/ subdirs with .gitkeep | Done |
+| Item                                                         | Status |
+| ------------------------------------------------------------ | ------ |
+| Go dependencies (chi, pgx/v5, godotenv, golang-migrate)      | Done   |
+| `internal/config/config.go` — Config struct + Load()         | Done   |
+| `internal/db/db.go` — Connect() with pgxpool, max 10 conns   | Done   |
+| `internal/db/migrate.go` — RunMigrations() via iofs driver   | Done   |
+| `db/embed.go` — embeds db/migrations FS for migration runner | Done   |
+| Migration 000001_init (replaced 000001_setup)                | Done   |
+| `cmd/server/main.go` — full server wiring                    | Done   |
+| `frontend/index.html` — placeholder                          | Done   |
+| All internal/ subdirs with .gitkeep                          | Done   |
 
 ### Verification checklist
 
-| Check | Result |
-|---|---|
-| `task docker-up` | Pass — Postgres starts clean |
-| `task migrate-up` | Pass — applies migration |
+| Check                          | Result                           |
+| ------------------------------ | -------------------------------- |
+| `task docker-up`               | Pass — Postgres starts clean     |
+| `task migrate-up`              | Pass — applies migration         |
 | `task migrate-up` (second run) | Pass — logs "already up to date" |
-| `task build` | Pass — compiles to bin/ownmaily |
-| `curl localhost:4400/health` | Pass — returns `{"status":"ok"}` |
-| Server logs | "OwnMaily started on :4400" |
+| `task build`                   | Pass — compiles to bin/ownmaily  |
+| `curl localhost:4400/health`   | Pass — returns `{"status":"ok"}` |
+| Server logs                    | "OwnMaily started on :4400"      |
 
 ### Deviations from plan
 
@@ -114,17 +114,17 @@ ownmaily/
 
 ## Taskfile Tasks
 
-| Task | Command | Notes |
-|---|---|---|
-| `task dev` | `go run ./cmd/server/...` | hot dev loop |
-| `task build` | builds to `bin/ownmaily` | |
-| `task sqlc-gen` | sqlc via Docker | requires at least one query file |
-| `task migrate-up` | runs all pending migrations | |
-| `task migrate-down` | rolls back 1 migration (STEP=N to override) | |
-| `task migrate-create NAME=foo` | creates 000xxx_foo.up/down.sql | |
-| `task docker-up` | `docker compose up -d` | |
-| `task docker-down` | `docker compose down` | |
-| `task psql` | opens psql shell | |
+| Task                           | Command                                     | Notes                            |
+| ------------------------------ | ------------------------------------------- | -------------------------------- |
+| `task dev`                     | `go run ./cmd/server/...`                   | hot dev loop                     |
+| `task build`                   | builds to `bin/ownmaily`                    |                                  |
+| `task sqlc-gen`                | sqlc via Docker                             | requires at least one query file |
+| `task migrate-up`              | runs all pending migrations                 |                                  |
+| `task migrate-down`            | rolls back 1 migration (STEP=N to override) |                                  |
+| `task migrate-create NAME=foo` | creates 000xxx_foo.up/down.sql              |                                  |
+| `task docker-up`               | `docker compose up -d`                      |                                  |
+| `task docker-down`             | `docker compose down`                       |                                  |
+| `task psql`                    | opens psql shell                            |                                  |
 
 ## Environment
 
@@ -137,20 +137,21 @@ PORT=4400
 
 ## Tool Versions
 
-| Tool | Version |
-|---|---|
-| Go | 1.26.2 |
-| golang-migrate | v4.19.1 |
-| sqlc | via Docker (sqlc/sqlc image) |
-| task | 3.46.3 |
-| Docker Compose | v2.38.1 |
-| PostgreSQL | 18-alpine |
+| Tool           | Version                      |
+| -------------- | ---------------------------- |
+| Go             | 1.26.2                       |
+| golang-migrate | v4.19.1                      |
+| sqlc           | via Docker (sqlc/sqlc image) |
+| task           | 3.46.3                       |
+| Docker Compose | v2.38.1                      |
+| PostgreSQL     | 18-alpine                    |
 
 ---
 
 ## Session 2 — Next (Schema + SQLC + Auth)
 
 Ready to begin:
+
 - Full DB schema (subscribers, lists, campaigns, jobs, settings, api_keys tables)
 - SQLC queries and generated Go code
 - JWT auth middleware + login endpoint
