@@ -37,6 +37,7 @@ func main() {
 	queries := db2.New(pool)
 
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
+	subscriberHandler := handler.NewSubscriberHandler(queries)
 
 	r := chi.NewRouter()
 
@@ -51,7 +52,15 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
-		// sessions 4+ mount here
+
+		r.Get("/api/subscribers", subscriberHandler.List)
+		r.Post("/api/subscribers", subscriberHandler.Create)
+		r.Get("/api/subscribers/export", subscriberHandler.Export)
+		r.Post("/api/subscribers/import", subscriberHandler.Import)
+		r.Get("/api/subscribers/{id}", subscriberHandler.Get)
+		r.Put("/api/subscribers/{id}", subscriberHandler.Update)
+		r.Delete("/api/subscribers/{id}", subscriberHandler.Delete)
+		r.Post("/api/subscribers/{id}/unsubscribe", subscriberHandler.Unsubscribe)
 	})
 
 	r.Handle("/*", http.FileServer(http.Dir("frontend")))

@@ -29,11 +29,11 @@ RETURNING id, email, first_name, last_name, status, source, created_at, updated_
 `
 
 type CreateSubscriberParams struct {
-	Email     string
-	FirstName string
-	LastName  string
-	Status    string
-	Source    string
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Status    string `json:"status"`
+	Source    string `json:"source"`
 }
 
 func (q *Queries) CreateSubscriber(ctx context.Context, arg CreateSubscriberParams) (Subscriber, error) {
@@ -107,6 +107,40 @@ func (q *Queries) GetSubscriberByID(ctx context.Context, id pgtype.UUID) (Subscr
 	return i, err
 }
 
+const listAllSubscribers = `-- name: ListAllSubscribers :many
+SELECT id, email, first_name, last_name, status, source, created_at, updated_at FROM subscribers
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllSubscribers(ctx context.Context) ([]Subscriber, error) {
+	rows, err := q.db.Query(ctx, listAllSubscribers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Subscriber
+	for rows.Next() {
+		var i Subscriber
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.FirstName,
+			&i.LastName,
+			&i.Status,
+			&i.Source,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSubscribers = `-- name: ListSubscribers :many
 SELECT id, email, first_name, last_name, status, source, created_at, updated_at FROM subscribers
 ORDER BY created_at DESC
@@ -114,8 +148,8 @@ LIMIT $1 OFFSET $2
 `
 
 type ListSubscribersParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 func (q *Queries) ListSubscribers(ctx context.Context, arg ListSubscribersParams) ([]Subscriber, error) {
@@ -155,9 +189,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListSubscribersByStatusParams struct {
-	Status string
-	Limit  int32
-	Offset int32
+	Status string `json:"status"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 func (q *Queries) ListSubscribersByStatus(ctx context.Context, arg ListSubscribersByStatusParams) ([]Subscriber, error) {
@@ -197,9 +231,9 @@ LIMIT $2 OFFSET $3
 `
 
 type SearchSubscribersParams struct {
-	Email  string
-	Limit  int32
-	Offset int32
+	Email  string `json:"email"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 func (q *Queries) SearchSubscribers(ctx context.Context, arg SearchSubscribersParams) ([]Subscriber, error) {
@@ -236,16 +270,18 @@ UPDATE subscribers SET
     email      = $2,
     first_name = $3,
     last_name  = $4,
+    status     = $5,
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, email, first_name, last_name, status, source, created_at, updated_at
 `
 
 type UpdateSubscriberParams struct {
-	ID        pgtype.UUID
-	Email     string
-	FirstName string
-	LastName  string
+	ID        pgtype.UUID `json:"id"`
+	Email     string      `json:"email"`
+	FirstName string      `json:"first_name"`
+	LastName  string      `json:"last_name"`
+	Status    string      `json:"status"`
 }
 
 func (q *Queries) UpdateSubscriber(ctx context.Context, arg UpdateSubscriberParams) (Subscriber, error) {
@@ -254,6 +290,7 @@ func (q *Queries) UpdateSubscriber(ctx context.Context, arg UpdateSubscriberPara
 		arg.Email,
 		arg.FirstName,
 		arg.LastName,
+		arg.Status,
 	)
 	var i Subscriber
 	err := row.Scan(
@@ -274,8 +311,8 @@ UPDATE subscribers SET status = $2, updated_at = NOW() WHERE id = $1
 `
 
 type UpdateSubscriberStatusParams struct {
-	ID     pgtype.UUID
-	Status string
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
 }
 
 func (q *Queries) UpdateSubscriberStatus(ctx context.Context, arg UpdateSubscriberStatusParams) error {
@@ -294,11 +331,11 @@ RETURNING id, email, first_name, last_name, status, source, created_at, updated_
 `
 
 type UpsertSubscriberParams struct {
-	Email     string
-	FirstName string
-	LastName  string
-	Status    string
-	Source    string
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Status    string `json:"status"`
+	Source    string `json:"source"`
 }
 
 func (q *Queries) UpsertSubscriber(ctx context.Context, arg UpsertSubscriberParams) (Subscriber, error) {

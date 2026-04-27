@@ -39,6 +39,12 @@ WHERE ls.list_id = $1
 ORDER BY s.created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: ListListsForSubscriber :many
+SELECT l.* FROM lists l
+JOIN list_subscribers ls ON ls.list_id = l.id
+WHERE ls.subscriber_id = $1
+ORDER BY l.name;
+
 -- name: IsSubscriberInList :one
 SELECT EXISTS(
     SELECT 1 FROM list_subscribers WHERE list_id = $1 AND subscriber_id = $2

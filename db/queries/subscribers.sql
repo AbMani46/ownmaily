@@ -22,6 +22,7 @@ UPDATE subscribers SET
     email      = $2,
     first_name = $3,
     last_name  = $4,
+    status     = $5,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
@@ -43,6 +44,10 @@ SELECT * FROM subscribers
 WHERE status = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- name: ListAllSubscribers :many
+SELECT * FROM subscribers
+ORDER BY created_at DESC;
 
 -- name: UpsertSubscriber :one
 INSERT INTO subscribers (email, first_name, last_name, status, source)

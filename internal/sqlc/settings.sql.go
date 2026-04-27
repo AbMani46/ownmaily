@@ -60,15 +60,15 @@ RETURNING id, setup_complete, site_name, installation_url, timezone, physical_ad
 `
 
 type UpdateSettingsParams struct {
-	SiteName        string
-	InstallationUrl string
-	Timezone        string
-	PhysicalAddress string
-	FromName        string
-	FromEmail       string
-	ReplyTo         string
-	SmtpProvider    string
-	SmtpCredentials []byte
+	SiteName        string `json:"site_name"`
+	InstallationUrl string `json:"installation_url"`
+	Timezone        string `json:"timezone"`
+	PhysicalAddress string `json:"physical_address"`
+	FromName        string `json:"from_name"`
+	FromEmail       string `json:"from_email"`
+	ReplyTo         string `json:"reply_to"`
+	SmtpProvider    string `json:"smtp_provider"`
+	SmtpCredentials []byte `json:"smtp_credentials"`
 }
 
 func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error) {

@@ -16,8 +16,8 @@ ON CONFLICT (email) DO NOTHING
 `
 
 type AddSuppressionParams struct {
-	Email  string
-	Reason string
+	Email  string `json:"email"`
+	Reason string `json:"reason"`
 }
 
 func (q *Queries) AddSuppression(ctx context.Context, arg AddSuppressionParams) error {
@@ -79,8 +79,8 @@ LIMIT $1 OFFSET $2
 `
 
 type ListSuppressionsParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 func (q *Queries) ListSuppressions(ctx context.Context, arg ListSuppressionsParams) ([]SuppressedEmail, error) {

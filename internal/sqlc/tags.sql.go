@@ -18,8 +18,8 @@ ON CONFLICT DO NOTHING
 `
 
 type AddTagToSubscriberParams struct {
-	SubscriberID pgtype.UUID
-	TagID        pgtype.UUID
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+	TagID        pgtype.UUID `json:"tag_id"`
 }
 
 func (q *Queries) AddTagToSubscriber(ctx context.Context, arg AddTagToSubscriberParams) error {
@@ -89,9 +89,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListSubscribersWithTagParams struct {
-	TagID  pgtype.UUID
-	Limit  int32
-	Offset int32
+	TagID  pgtype.UUID `json:"tag_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
 }
 
 func (q *Queries) ListSubscribersWithTag(ctx context.Context, arg ListSubscribersWithTagParams) ([]Subscriber, error) {
@@ -179,8 +179,8 @@ DELETE FROM subscriber_tags WHERE subscriber_id = $1 AND tag_id = $2
 `
 
 type RemoveTagFromSubscriberParams struct {
-	SubscriberID pgtype.UUID
-	TagID        pgtype.UUID
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+	TagID        pgtype.UUID `json:"tag_id"`
 }
 
 func (q *Queries) RemoveTagFromSubscriber(ctx context.Context, arg RemoveTagFromSubscriberParams) error {
@@ -193,8 +193,8 @@ UPDATE tags SET name = $2 WHERE id = $1 RETURNING id, name, created_at
 `
 
 type UpdateTagParams struct {
-	ID   pgtype.UUID
-	Name string
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
 }
 
 func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {

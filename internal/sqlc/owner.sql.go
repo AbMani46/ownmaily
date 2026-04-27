@@ -16,8 +16,8 @@ RETURNING id, email, password_hash, created_at, updated_at
 `
 
 type CreateOwnerParams struct {
-	Email        string
-	PasswordHash string
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
 }
 
 func (q *Queries) CreateOwner(ctx context.Context, arg CreateOwnerParams) (Owner, error) {

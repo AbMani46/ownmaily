@@ -16,8 +16,8 @@ RETURNING id, key_hash, key_prefix, created_at
 `
 
 type CreateAPIKeyParams struct {
-	KeyHash   string
-	KeyPrefix string
+	KeyHash   string `json:"key_hash"`
+	KeyPrefix string `json:"key_prefix"`
 }
 
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {

@@ -29,8 +29,8 @@ SELECT EXISTS(
 `
 
 type HasOpenedParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) HasOpened(ctx context.Context, arg HasOpenedParams) (bool, error) {
@@ -76,8 +76,8 @@ ON CONFLICT (campaign_id, subscriber_id) DO NOTHING
 `
 
 type RecordOpenParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) RecordOpen(ctx context.Context, arg RecordOpenParams) error {

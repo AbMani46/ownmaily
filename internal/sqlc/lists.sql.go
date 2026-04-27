@@ -18,8 +18,8 @@ ON CONFLICT DO NOTHING
 `
 
 type AddSubscriberToListParams struct {
-	ListID       pgtype.UUID
-	SubscriberID pgtype.UUID
+	ListID       pgtype.UUID `json:"list_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) AddSubscriberToList(ctx context.Context, arg AddSubscriberToListParams) error {
@@ -45,9 +45,9 @@ RETURNING id, name, description, double_opt_in, created_at, updated_at
 `
 
 type CreateListParams struct {
-	Name        string
-	Description string
-	DoubleOptIn bool
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	DoubleOptIn bool   `json:"double_opt_in"`
 }
 
 func (q *Queries) CreateList(ctx context.Context, arg CreateListParams) (List, error) {
@@ -98,8 +98,8 @@ SELECT EXISTS(
 `
 
 type IsSubscriberInListParams struct {
-	ListID       pgtype.UUID
-	SubscriberID pgtype.UUID
+	ListID       pgtype.UUID `json:"list_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) IsSubscriberInList(ctx context.Context, arg IsSubscriberInListParams) (bool, error) {
@@ -140,6 +140,40 @@ func (q *Queries) ListLists(ctx context.Context) ([]List, error) {
 	return items, nil
 }
 
+const listListsForSubscriber = `-- name: ListListsForSubscriber :many
+SELECT l.id, l.name, l.description, l.double_opt_in, l.created_at, l.updated_at FROM lists l
+JOIN list_subscribers ls ON ls.list_id = l.id
+WHERE ls.subscriber_id = $1
+ORDER BY l.name
+`
+
+func (q *Queries) ListListsForSubscriber(ctx context.Context, subscriberID pgtype.UUID) ([]List, error) {
+	rows, err := q.db.Query(ctx, listListsForSubscriber, subscriberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []List
+	for rows.Next() {
+		var i List
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.DoubleOptIn,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSubscribersInList = `-- name: ListSubscribersInList :many
 SELECT s.id, s.email, s.first_name, s.last_name, s.status, s.source, s.created_at, s.updated_at FROM subscribers s
 JOIN list_subscribers ls ON ls.subscriber_id = s.id
@@ -149,9 +183,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListSubscribersInListParams struct {
-	ListID pgtype.UUID
-	Limit  int32
-	Offset int32
+	ListID pgtype.UUID `json:"list_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
 }
 
 func (q *Queries) ListSubscribersInList(ctx context.Context, arg ListSubscribersInListParams) ([]Subscriber, error) {
@@ -188,8 +222,8 @@ DELETE FROM list_subscribers WHERE list_id = $1 AND subscriber_id = $2
 `
 
 type RemoveSubscriberFromListParams struct {
-	ListID       pgtype.UUID
-	SubscriberID pgtype.UUID
+	ListID       pgtype.UUID `json:"list_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) RemoveSubscriberFromList(ctx context.Context, arg RemoveSubscriberFromListParams) error {
@@ -208,10 +242,10 @@ RETURNING id, name, description, double_opt_in, created_at, updated_at
 `
 
 type UpdateListParams struct {
-	ID          pgtype.UUID
-	Name        string
-	Description string
-	DoubleOptIn bool
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	DoubleOptIn bool        `json:"double_opt_in"`
 }
 
 func (q *Queries) UpdateList(ctx context.Context, arg UpdateListParams) (List, error) {

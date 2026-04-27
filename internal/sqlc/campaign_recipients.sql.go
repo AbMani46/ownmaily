@@ -12,8 +12,8 @@ import (
 )
 
 type BulkCreateCampaignRecipientsParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 const countRecipientsByStatus = `-- name: CountRecipientsByStatus :one
@@ -22,8 +22,8 @@ WHERE campaign_id = $1 AND status = $2
 `
 
 type CountRecipientsByStatusParams struct {
-	CampaignID pgtype.UUID
-	Status     string
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	Status     string      `json:"status"`
 }
 
 func (q *Queries) CountRecipientsByStatus(ctx context.Context, arg CountRecipientsByStatusParams) (int64, error) {
@@ -40,8 +40,8 @@ RETURNING id, campaign_id, subscriber_id, status, sent_at
 `
 
 type CreateCampaignRecipientParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) CreateCampaignRecipient(ctx context.Context, arg CreateCampaignRecipientParams) (CampaignRecipient, error) {
@@ -63,8 +63,8 @@ WHERE campaign_id = $1 AND subscriber_id = $2
 `
 
 type GetRecipientStatusParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
 func (q *Queries) GetRecipientStatus(ctx context.Context, arg GetRecipientStatusParams) (string, error) {
@@ -82,9 +82,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListPendingRecipientsParams struct {
-	CampaignID pgtype.UUID
-	Limit      int32
-	Offset     int32
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	Limit      int32       `json:"limit"`
+	Offset     int32       `json:"offset"`
 }
 
 func (q *Queries) ListPendingRecipients(ctx context.Context, arg ListPendingRecipientsParams) ([]CampaignRecipient, error) {
@@ -119,10 +119,10 @@ WHERE campaign_id = $1 AND subscriber_id = $2
 `
 
 type UpdateRecipientStatusParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
-	Status       string
-	SentAt       pgtype.Timestamptz
+	CampaignID   pgtype.UUID        `json:"campaign_id"`
+	SubscriberID pgtype.UUID        `json:"subscriber_id"`
+	Status       string             `json:"status"`
+	SentAt       pgtype.Timestamptz `json:"sent_at"`
 }
 
 func (q *Queries) UpdateRecipientStatus(ctx context.Context, arg UpdateRecipientStatusParams) error {

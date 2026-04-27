@@ -131,8 +131,8 @@ UPDATE send_jobs SET status = $2, updated_at = NOW() WHERE id = $1
 `
 
 type UpdateSendJobStatusParams struct {
-	ID     pgtype.UUID
-	Status string
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
 }
 
 func (q *Queries) UpdateSendJobStatus(ctx context.Context, arg UpdateSendJobStatusParams) error {

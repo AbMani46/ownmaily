@@ -9,131 +9,131 @@ import (
 )
 
 type ApiKey struct {
-	ID        pgtype.UUID
-	KeyHash   string
-	KeyPrefix string
-	CreatedAt pgtype.Timestamptz
+	ID        pgtype.UUID        `json:"id"`
+	KeyHash   string             `json:"key_hash"`
+	KeyPrefix string             `json:"key_prefix"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Campaign struct {
-	ID          pgtype.UUID
-	Name        string
-	Subject     string
-	PreviewText string
-	FromName    string
-	FromEmail   string
-	ReplyTo     string
-	HtmlBody    string
-	TextBody    string
-	Status      string
-	SendToType  string
-	SendToID    pgtype.UUID
-	ScheduledAt pgtype.Timestamptz
-	SentAt      pgtype.Timestamptz
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Subject     string             `json:"subject"`
+	PreviewText string             `json:"preview_text"`
+	FromName    string             `json:"from_name"`
+	FromEmail   string             `json:"from_email"`
+	ReplyTo     string             `json:"reply_to"`
+	HtmlBody    string             `json:"html_body"`
+	TextBody    string             `json:"text_body"`
+	Status      string             `json:"status"`
+	SendToType  string             `json:"send_to_type"`
+	SendToID    pgtype.UUID        `json:"send_to_id"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
+	SentAt      pgtype.Timestamptz `json:"sent_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CampaignRecipient struct {
-	ID           pgtype.UUID
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
-	Status       string
-	SentAt       pgtype.Timestamptz
+	ID           pgtype.UUID        `json:"id"`
+	CampaignID   pgtype.UUID        `json:"campaign_id"`
+	SubscriberID pgtype.UUID        `json:"subscriber_id"`
+	Status       string             `json:"status"`
+	SentAt       pgtype.Timestamptz `json:"sent_at"`
 }
 
 type Click struct {
-	ID           pgtype.UUID
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
-	LinkIndex    int32
-	LinkUrl      string
-	ClickedAt    pgtype.Timestamptz
+	ID           pgtype.UUID        `json:"id"`
+	CampaignID   pgtype.UUID        `json:"campaign_id"`
+	SubscriberID pgtype.UUID        `json:"subscriber_id"`
+	LinkIndex    int32              `json:"link_index"`
+	LinkUrl      string             `json:"link_url"`
+	ClickedAt    pgtype.Timestamptz `json:"clicked_at"`
 }
 
 type List struct {
-	ID          pgtype.UUID
-	Name        string
-	Description string
-	DoubleOptIn bool
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	DoubleOptIn bool               `json:"double_opt_in"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ListSubscriber struct {
-	ListID       pgtype.UUID
-	SubscriberID pgtype.UUID
-	CreatedAt    pgtype.Timestamptz
+	ListID       pgtype.UUID        `json:"list_id"`
+	SubscriberID pgtype.UUID        `json:"subscriber_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type Open struct {
-	ID           pgtype.UUID
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
-	OpenedAt     pgtype.Timestamptz
+	ID           pgtype.UUID        `json:"id"`
+	CampaignID   pgtype.UUID        `json:"campaign_id"`
+	SubscriberID pgtype.UUID        `json:"subscriber_id"`
+	OpenedAt     pgtype.Timestamptz `json:"opened_at"`
 }
 
 type Owner struct {
-	ID           bool
-	Email        string
-	PasswordHash string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID           bool               `json:"id"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SendJob struct {
-	ID           pgtype.UUID
-	CampaignID   pgtype.UUID
-	Status       string
-	TotalCount   int32
-	SentCount    int32
-	FailedCount  int32
-	ErrorMessage string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID           pgtype.UUID        `json:"id"`
+	CampaignID   pgtype.UUID        `json:"campaign_id"`
+	Status       string             `json:"status"`
+	TotalCount   int32              `json:"total_count"`
+	SentCount    int32              `json:"sent_count"`
+	FailedCount  int32              `json:"failed_count"`
+	ErrorMessage string             `json:"error_message"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Setting struct {
-	ID              bool
-	SetupComplete   bool
-	SiteName        string
-	InstallationUrl string
-	Timezone        string
-	PhysicalAddress string
-	FromName        string
-	FromEmail       string
-	ReplyTo         string
-	SmtpProvider    string
-	SmtpCredentials []byte
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	ID              bool               `json:"id"`
+	SetupComplete   bool               `json:"setup_complete"`
+	SiteName        string             `json:"site_name"`
+	InstallationUrl string             `json:"installation_url"`
+	Timezone        string             `json:"timezone"`
+	PhysicalAddress string             `json:"physical_address"`
+	FromName        string             `json:"from_name"`
+	FromEmail       string             `json:"from_email"`
+	ReplyTo         string             `json:"reply_to"`
+	SmtpProvider    string             `json:"smtp_provider"`
+	SmtpCredentials []byte             `json:"smtp_credentials"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Subscriber struct {
-	ID        pgtype.UUID
-	Email     string
-	FirstName string
-	LastName  string
-	Status    string
-	Source    string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	FirstName string             `json:"first_name"`
+	LastName  string             `json:"last_name"`
+	Status    string             `json:"status"`
+	Source    string             `json:"source"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SubscriberTag struct {
-	SubscriberID pgtype.UUID
-	TagID        pgtype.UUID
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+	TagID        pgtype.UUID `json:"tag_id"`
 }
 
 type SuppressedEmail struct {
-	ID        pgtype.UUID
-	Email     string
-	Reason    string
-	CreatedAt pgtype.Timestamptz
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	Reason    string             `json:"reason"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Tag struct {
-	ID        pgtype.UUID
-	Name      string
-	CreatedAt pgtype.Timestamptz
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

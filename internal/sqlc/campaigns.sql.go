@@ -29,16 +29,16 @@ RETURNING id, name, subject, preview_text, from_name, from_email, reply_to, html
 `
 
 type CreateCampaignParams struct {
-	Name        string
-	Subject     string
-	PreviewText string
-	FromName    string
-	FromEmail   string
-	ReplyTo     string
-	HtmlBody    string
-	TextBody    string
-	SendToType  string
-	SendToID    pgtype.UUID
+	Name        string      `json:"name"`
+	Subject     string      `json:"subject"`
+	PreviewText string      `json:"preview_text"`
+	FromName    string      `json:"from_name"`
+	FromEmail   string      `json:"from_email"`
+	ReplyTo     string      `json:"reply_to"`
+	HtmlBody    string      `json:"html_body"`
+	TextBody    string      `json:"text_body"`
+	SendToType  string      `json:"send_to_type"`
+	SendToID    pgtype.UUID `json:"send_to_id"`
 }
 
 func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) (Campaign, error) {
@@ -118,8 +118,8 @@ SELECT id, name, subject, preview_text, from_name, from_email, reply_to, html_bo
 `
 
 type ListCampaignsParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 func (q *Queries) ListCampaigns(ctx context.Context, arg ListCampaignsParams) ([]Campaign, error) {
@@ -220,18 +220,18 @@ RETURNING id, name, subject, preview_text, from_name, from_email, reply_to, html
 `
 
 type UpdateCampaignParams struct {
-	ID          pgtype.UUID
-	Name        string
-	Subject     string
-	PreviewText string
-	FromName    string
-	FromEmail   string
-	ReplyTo     string
-	HtmlBody    string
-	TextBody    string
-	SendToType  string
-	SendToID    pgtype.UUID
-	ScheduledAt pgtype.Timestamptz
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Subject     string             `json:"subject"`
+	PreviewText string             `json:"preview_text"`
+	FromName    string             `json:"from_name"`
+	FromEmail   string             `json:"from_email"`
+	ReplyTo     string             `json:"reply_to"`
+	HtmlBody    string             `json:"html_body"`
+	TextBody    string             `json:"text_body"`
+	SendToType  string             `json:"send_to_type"`
+	SendToID    pgtype.UUID        `json:"send_to_id"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
 }
 
 func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) (Campaign, error) {
@@ -276,8 +276,8 @@ UPDATE campaigns SET status = $2, updated_at = NOW() WHERE id = $1
 `
 
 type UpdateCampaignStatusParams struct {
-	ID     pgtype.UUID
-	Status string
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
 }
 
 func (q *Queries) UpdateCampaignStatus(ctx context.Context, arg UpdateCampaignStatusParams) error {

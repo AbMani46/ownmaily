@@ -31,9 +31,9 @@ ORDER BY link_index
 `
 
 type CountClicksByLinkRow struct {
-	LinkIndex  int32
-	LinkUrl    string
-	ClickCount int64
+	LinkIndex  int32  `json:"link_index"`
+	LinkUrl    string `json:"link_url"`
+	ClickCount int64  `json:"click_count"`
 }
 
 func (q *Queries) CountClicksByLink(ctx context.Context, campaignID pgtype.UUID) ([]CountClicksByLinkRow, error) {
@@ -94,10 +94,10 @@ RETURNING id, campaign_id, subscriber_id, link_index, link_url, clicked_at
 `
 
 type RecordClickParams struct {
-	CampaignID   pgtype.UUID
-	SubscriberID pgtype.UUID
-	LinkIndex    int32
-	LinkUrl      string
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+	LinkIndex    int32       `json:"link_index"`
+	LinkUrl      string      `json:"link_url"`
 }
 
 func (q *Queries) RecordClick(ctx context.Context, arg RecordClickParams) (Click, error) {
