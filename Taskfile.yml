@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+dotenv:
+  - .env
+
+tasks:
+  dev:
+    desc: Run the development server
+    cmds:
+      - go run ./cmd/server/...
+
+  build:
+    desc: Build the production binary to bin/ownmaily
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/ownmaily ./cmd/server/...
+
+  sqlc-gen:
+    desc: Generate Go code from SQL queries
+    cmds:
+      - docker run --rm -v $(pwd):/src -w /src sqlc/sqlc generate
+
+  migrate-up:
+    desc: Run all pending database migrations
+    cmds:
+      - migrate -database "${DB_URL}" -path db/migrations up
+
+  migrate-down:
+    desc: Roll back N migrations (STEP=1 by default)
+    cmds:
+      - migrate -database "${DB_URL}" -path db/migrations down {{.STEP | default "1"}}
+
+  migrate-create:
+    desc: Create a new migration file pair (NAME=<name>)
+    cmds:
+      - migrate create -ext sql -dir db/migrations -seq {{.NAME}}
+    requires:
+      vars:
+        - NAME
+
+  docker-up:
+    desc: Start Docker Compose services in the background
+    cmds:
+      - docker compose up -d
+
+  docker-down:
+    desc: Stop and remove Docker Compose services
+    cmds:
+      - docker compose down
+
+  psql:
+    desc: Open a psql shell to the dev database
+    cmds:
+      - psql "${DB_URL}"
