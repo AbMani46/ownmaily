@@ -49,6 +49,9 @@ LIMIT $2 OFFSET $3;
 SELECT * FROM subscribers
 ORDER BY created_at DESC;
 
+-- name: CountSubscribersByStatus :one
+SELECT COUNT(*) FROM subscribers WHERE status = $1;
+
 -- name: UpsertSubscriber :one
 INSERT INTO subscribers (email, first_name, last_name, status, source)
 VALUES ($1, $2, $3, $4, $5)

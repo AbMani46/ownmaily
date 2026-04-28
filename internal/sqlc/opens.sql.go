@@ -22,6 +22,17 @@ func (q *Queries) CountOpensByCampaign(ctx context.Context, campaignID pgtype.UU
 	return count, err
 }
 
+const countTotalOpens = `-- name: CountTotalOpens :one
+SELECT COUNT(*) FROM opens
+`
+
+func (q *Queries) CountTotalOpens(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTotalOpens)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const hasOpened = `-- name: HasOpened :one
 SELECT EXISTS(
     SELECT 1 FROM opens WHERE campaign_id = $1 AND subscriber_id = $2

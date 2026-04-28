@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -81,6 +82,62 @@ func (h *WebhookHandler) Mailgun(w http.ResponseWriter, r *http.Request) {
 		h.handleHardBounce(ctx, event)
 	case "soft":
 		log.Printf("webhook/mailgun: soft bounce for %s — logged, no suppression", event.Email)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// SES handles POST /webhooks/ses.
+// Handles SNS SubscriptionConfirmation (confirms by GETting SubscribeURL)
+// and SNS Notification (processes bounce/complaint events).
+// Always returns 200 to prevent SNS from retrying.
+func (h *WebhookHandler) SES(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("webhook/ses: read body: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var envelope struct {
+		Type         string `json:"Type"`
+		SubscribeURL string `json:"SubscribeURL"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		log.Printf("webhook/ses: parse envelope: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if envelope.Type == "SubscriptionConfirmation" {
+		if envelope.SubscribeURL != "" {
+			resp, err := http.Get(envelope.SubscribeURL) //nolint:noctx
+			if err != nil {
+				log.Printf("webhook/ses: confirm subscription: %v", err)
+			} else {
+				resp.Body.Close()
+				log.Printf("webhook/ses: SNS subscription confirmed")
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	events, err := mailer.ParseSESBounce(body)
+	if err != nil {
+		log.Printf("webhook/ses: parse: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	ctx := context.Background()
+	for _, event := range events {
+		switch event.Type {
+		case "hard":
+			h.handleHardBounce(ctx, event)
+		case "soft":
+			log.Printf("webhook/ses: soft bounce for %s — logged, no suppression", event.Email)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

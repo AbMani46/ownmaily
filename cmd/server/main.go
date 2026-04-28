@@ -45,11 +45,13 @@ func main() {
 
 	activeMailer := loadMailer(context.Background(), queries)
 	sendWorker := worker.NewSendWorker(queries, activeMailer, cfg.InstallationURL, cfg.AppSecret)
+	schedulerWorker := worker.NewSchedulerWorker(queries, pool)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go sendWorker.Start(ctx)
+	go schedulerWorker.Start(ctx)
 
 	webhookHandler := handler.NewWebhookHandler(queries)
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
@@ -58,6 +60,8 @@ func main() {
 	listHandler := handler.NewListHandler(queries, confirmMailer)
 	tagHandler := handler.NewTagHandler(queries)
 	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
+	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
+	analyticsHandler := handler.NewAnalyticsHandler(queries)
 
 	r := chi.NewRouter()
 
@@ -71,8 +75,12 @@ func main() {
 	r.With(middleware.RequireAuth(cfg.AppSecret, queries)).Get("/api/auth/me", authHandler.Me)
 
 	r.Get("/confirm", listHandler.ConfirmOptIn)
+	r.Get("/unsubscribe", trackingHandler.Unsubscribe)
+	r.Get("/track/open/{token}", trackingHandler.Open)
+	r.Get("/track/click/{token}", trackingHandler.Click)
 	r.Post("/webhooks/resend", webhookHandler.Resend)
 	r.Post("/webhooks/mailgun", webhookHandler.Mailgun)
+	r.Post("/webhooks/ses", webhookHandler.SES)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
@@ -117,6 +125,9 @@ func main() {
 		r.Post("/api/campaigns/{id}/schedule", campaignHandler.Schedule)
 		r.Post("/api/campaigns/{id}/cancel", campaignHandler.Cancel)
 		r.Post("/api/campaigns/{id}/duplicate", campaignHandler.Duplicate)
+
+		r.Get("/api/analytics/overview", analyticsHandler.Overview)
+		r.Get("/api/subscribers/{id}/stats", subscriberHandler.Stats)
 	})
 
 	r.Handle("/*", http.FileServer(http.Dir("frontend")))

@@ -61,6 +61,68 @@ func ParseMailgunBounce(r *http.Request) (*BounceEvent, error) {
 	}
 }
 
+// ParseSESBounce parses an SNS Notification body from SES into BounceEvents.
+// Returns nil, nil for SNS message types other than "Notification".
+func ParseSESBounce(body []byte) ([]*BounceEvent, error) {
+	var envelope struct {
+		Type    string `json:"Type"`
+		Message string `json:"Message"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("ses: parse sns envelope: %w", err)
+	}
+
+	if envelope.Type != "Notification" {
+		return nil, nil
+	}
+
+	var notification struct {
+		NotificationType string `json:"notificationType"`
+		Bounce           struct {
+			BounceType       string `json:"bounceType"`
+			BouncedRecipients []struct {
+				EmailAddress string `json:"emailAddress"`
+			} `json:"bouncedRecipients"`
+		} `json:"bounce"`
+		Complaint struct {
+			ComplainedRecipients []struct {
+				EmailAddress string `json:"emailAddress"`
+			} `json:"complainedRecipients"`
+		} `json:"complaint"`
+	}
+	if err := json.Unmarshal([]byte(envelope.Message), &notification); err != nil {
+		return nil, fmt.Errorf("ses: parse notification message: %w", err)
+	}
+
+	var events []*BounceEvent
+	switch notification.NotificationType {
+	case "Bounce":
+		bounceType := "hard"
+		if notification.Bounce.BounceType == "Transient" {
+			bounceType = "soft"
+		}
+		for _, r := range notification.Bounce.BouncedRecipients {
+			events = append(events, &BounceEvent{
+				Email:     r.EmailAddress,
+				Type:      bounceType,
+				Reason:    "hard_bounce",
+				Timestamp: time.Now(),
+			})
+		}
+	case "Complaint":
+		for _, r := range notification.Complaint.ComplainedRecipients {
+			events = append(events, &BounceEvent{
+				Email:     r.EmailAddress,
+				Type:      "hard",
+				Reason:    "complained",
+				Timestamp: time.Now(),
+			})
+		}
+	}
+
+	return events, nil
+}
+
 // ParseResendBounce parses a Resend webhook body into a BounceEvent.
 // Returns (nil, nil) for event types that don't map to a bounce.
 func ParseResendBounce(body []byte) (*BounceEvent, error) {

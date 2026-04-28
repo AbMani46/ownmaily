@@ -56,6 +56,17 @@ func (q *Queries) CountClicksByLink(ctx context.Context, campaignID pgtype.UUID)
 	return items, nil
 }
 
+const countTotalClicks = `-- name: CountTotalClicks :one
+SELECT COUNT(*) FROM clicks
+`
+
+func (q *Queries) CountTotalClicks(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTotalClicks)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const listClicksBySubscriber = `-- name: ListClicksBySubscriber :many
 SELECT id, campaign_id, subscriber_id, link_index, link_url, clicked_at FROM clicks WHERE subscriber_id = $1 ORDER BY clicked_at DESC
 `

@@ -35,8 +35,8 @@ func (m *MailgunMailer) Send(msg Message) error {
 	if msg.ReplyTo != "" {
 		form.Set("h:Reply-To", msg.ReplyTo)
 	}
-	if v, ok := msg.Headers["List-Unsubscribe"]; ok {
-		form.Set("h:List-Unsubscribe", v)
+	for k, v := range msg.Headers {
+		form.Set("h:"+k, v)
 	}
 
 	endpoint := fmt.Sprintf("https://api.mailgun.net/v3/%s/messages", m.domain)

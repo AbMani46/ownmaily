@@ -23,3 +23,15 @@ LIMIT $2 OFFSET $3;
 -- name: CountRecipientsByStatus :one
 SELECT COUNT(*) FROM campaign_recipients
 WHERE campaign_id = $1 AND status = $2;
+
+-- name: CountTotalSent :one
+SELECT COUNT(*) FROM campaign_recipients WHERE status = 'sent';
+
+-- name: ListCampaignsReceivedBySubscriber :many
+SELECT c.id, c.name, c.subject, c.preview_text, c.from_name, c.from_email, c.reply_to,
+       c.html_body, c.text_body, c.status, c.send_to_type, c.send_to_id,
+       c.scheduled_at, c.sent_at, c.created_at, c.updated_at
+FROM campaigns c
+JOIN campaign_recipients cr ON cr.campaign_id = c.id
+WHERE cr.subscriber_id = $1
+ORDER BY cr.sent_at DESC NULLS LAST;

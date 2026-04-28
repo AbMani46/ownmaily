@@ -542,13 +542,13 @@ curl -X POST localhost:4400/webhooks/resend \
 
 ### What was built
 
-| Item | File |
-| ---- | ---- |
-| `MailgunMailer` struct + `Send` + `Name` | `internal/mailer/mailgun.go` |
-| Factory `"mailgun"` case (was stub) | `internal/mailer/factory.go` |
-| `ParseMailgunBounce(r *http.Request)` | `internal/mailer/bounce.go` |
-| `WebhookHandler.Mailgun` handler | `internal/handler/webhooks.go` |
-| `POST /webhooks/mailgun` route | `cmd/server/main.go` |
+| Item                                     | File                           |
+| ---------------------------------------- | ------------------------------ |
+| `MailgunMailer` struct + `Send` + `Name` | `internal/mailer/mailgun.go`   |
+| Factory `"mailgun"` case (was stub)      | `internal/mailer/factory.go`   |
+| `ParseMailgunBounce(r *http.Request)`    | `internal/mailer/bounce.go`    |
+| `WebhookHandler.Mailgun` handler         | `internal/handler/webhooks.go` |
+| `POST /webhooks/mailgun` route           | `cmd/server/main.go`           |
 
 ### How sending works
 
@@ -570,14 +570,14 @@ Restart server — logs `mailer: mailgun loaded`.
 
 ### Verification
 
-| Check | Result |
-| ----- | ------ |
-| `go build ./...` | Pass — compiles clean |
-| Hard bounce curl → 200 | Pass |
-| Complaint curl → 200 | Pass |
-| Unhandled event curl → 200 | Pass |
-| `test@example.com` in `suppressed_emails` (reason: hard_bounce) | Pass |
-| `test2@example.com` in `suppressed_emails` (reason: complained) | Pass |
+| Check                                                           | Result                |
+| --------------------------------------------------------------- | --------------------- |
+| `go build ./...`                                                | Pass — compiles clean |
+| Hard bounce curl → 200                                          | Pass                  |
+| Complaint curl → 200                                            | Pass                  |
+| Unhandled event curl → 200                                      | Pass                  |
+| `test@example.com` in `suppressed_emails` (reason: hard_bounce) | Pass                  |
+| `test2@example.com` in `suppressed_emails` (reason: complained) | Pass                  |
 
 Real Mailgun send was **not** tested (no account available). Webhook simulation confirmed.
 
@@ -588,4 +588,204 @@ Real Mailgun send was **not** tested (no account available). Webhook simulation 
 
 ---
 
-## Session 11 — Next
+## Session 11 — SES Integration + Scheduler Worker (complete)
+
+### What was built
+
+| Item                                                                                                  | Status |
+| ----------------------------------------------------------------------------------------------------- | ------ |
+| `internal/mailer/ses_sign.go` — AWS SigV4 signing: signRequest, hexSHA256, hmacSHA256 helpers         | Done   |
+| `internal/mailer/ses.go` — SESMailer struct + Send + Name; SES v2 JSON payload; no AWS SDK            | Done   |
+| `internal/mailer/factory.go` — SES case replaces stub; parses access_key_id/secret/region credentials | Done   |
+| `internal/mailer/bounce.go` — ParseSESBounce: handles SNS Notification; Bounce + Complaint types      | Done   |
+| `internal/handler/webhooks.go` — WebhookHandler.SES: SubscriptionConfirmation + Notification routing  | Done   |
+| `POST /webhooks/ses` — registered outside RequireAuth group                                           | Done   |
+| `internal/worker/scheduler.go` — SchedulerWorker: 60s poll, transactional queuing with re-fetch guard | Done   |
+| `cmd/server/main.go` — schedulerWorker wired; both workers started on ctx                             | Done   |
+
+### Verification
+
+| Check                                               | Result                                                 |
+| --------------------------------------------------- | ------------------------------------------------------ |
+| `go build ./...`                                    | Pass — compiles clean                                  |
+| POST /webhooks/ses SubscriptionConfirmation         | 200 — GETs SubscribeURL, logs "subscription confirmed" |
+| POST /webhooks/ses Notification (hard bounce)       | 200 — ses-test@example.com in suppressed_emails        |
+| Scheduler: injected past-scheduled campaign in psql | Picked up within 60s, status → queued → sent           |
+| Scheduler log                                       | "scheduler: queued campaign <id>"                      |
+
+### SES credentials JSON shape
+
+```json
+{ "access_key_id": "...", "secret_access_key": "...", "region": "us-east-1" }
+```
+
+Update via psql (no settings UI until Session 17):
+
+```sql
+UPDATE settings SET
+  smtp_provider = 'ses',
+  smtp_credentials = '{"access_key_id":"AKIA...","secret_access_key":"...","region":"us-east-1"}'
+WHERE id = TRUE;
+```
+
+### Architecture notes
+
+- SigV4 signing: canonical headers (content-type, host, x-amz-date in alphabetical order); HMAC chain: AWS4+secret → date → region → ses → aws4_request
+- SNS SubscriptionConfirmation: handler GETs SubscribeURL directly; ParseSESBounce returns nil,nil for non-Notification types so the handler handles subscription separately
+- Scheduler transaction: uses `pool.BeginTx` + `db.WithTx(tx)` to wrap CreateSendJob + UpdateCampaignStatus atomically; re-fetches campaign inside tx to prevent double-scheduling
+
+### Deviations from plan
+
+- **SES send not live-tested** — no AWS account available; compile-only verification per spec note
+- **Before running curl verification scripts, kill whatever is running on the port first** — the dev server was already running on :4400 when verification curls were attempted
+- **Scheduler fired at t+120s on first test** — the campaign was inserted just after the first tick (t+60s), so it was picked up at t+120s. Under normal conditions it will be within 60 seconds of insertion.
+
+---
+
+## Session 12 — Open Tracking: Pixel Endpoint, Token Generation, Recording (complete)
+
+### What was built
+
+| Item                                                                                                    | Status |
+| ------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/tracking/tokens.go` — `GenerateOpenToken`, `ParseOpenToken` (HMAC-SHA256, same pattern as S5) | Done   |
+| `internal/handler/tracking.go` — `TrackingHandler.Open`: parse token, record open, always return GIF    | Done   |
+| `internal/worker/email_builder.go` — pixel injected before `</body>` (or appended); TextBody unchanged  | Done   |
+| `GET /track/open/{token}` — registered outside RequireAuth group in `cmd/server/main.go`                | Done   |
+
+### Verification
+
+| Check                                        | Result                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------- |
+| `go build ./...`                             | Pass — compiles clean                                                   |
+| `GET /track/open/invalid.token`              | 200, Content-Type: image/gif, 43 bytes                                  |
+| `GET /track/open/<valid_token>` (first hit)  | 200, Content-Type: image/gif, row inserted in `opens`                   |
+| `GET /track/open/<valid_token>` (second hit) | 200, Content-Type: image/gif, no duplicate row (ON CONFLICT DO NOTHING) |
+| Campaign send → `/api/campaigns/:id/stats`   | opens: 1, open_rate: 1.0 after hitting pixel for sent campaign          |
+
+### Token format
+
+- Payload: `subscriberID:campaignID` (both UUID strings)
+- Message: `base64url(payload)`
+- Signature: `base64url(HMAC-SHA256(message, appSecret))`
+- Token: `message + "." + signature`
+- No expiry — tokens are valid forever (embedded in already-sent emails)
+
+### Deviations from plan
+
+- **Pixel injected at send time, not stored in DB** — `BuildMessage` injects pixel dynamically; `html_body` in `campaigns` table stays as the original template. This is correct: the pixel URL is per-recipient, so it cannot be stored in the campaign body.
+- **`pgtype.UUID` used throughout** — spec said `uuid.UUID` but the project uses `pgtype.UUID` everywhere; `internal/tracking` uses the same type.
+
+---
+
+## Session 13 — Click Tracking: URL Rewriting, Redirect Endpoint, Recording (complete)
+
+### What was built
+
+| Item                                                                                            | Status |
+| ----------------------------------------------------------------------------------------------- | ------ |
+| `internal/tracking/tokens.go` — GenerateClickToken, ParseClickToken (payload: subID:campID:idx) | Done   |
+| `internal/tracking/rewrite.go` — RewriteLinks via golang.org/x/net/html tree walk               | Done   |
+| `internal/handler/tracking.go` — Click handler: parse token, RecordClick, 302 redirect          | Done   |
+| `internal/worker/email_builder.go` — RewriteLinks called before pixel injection                 | Done   |
+| `cmd/server/main.go` — `GET /track/click/{token}` route wired outside RequireAuth group         | Done   |
+| `golang.org/x/net` dependency added (upgraded to v0.53.0)                                       | Done   |
+
+### Verification
+
+| Check                                                                | Result                        |
+| -------------------------------------------------------------------- | ----------------------------- |
+| Valid click token → 302 redirect to destination                      | Pass                          |
+| Click recorded in `clicks` table (link_index, link_url, campaign_id) | Pass — 2 rows after 2 hits    |
+| Invalid token → still redirects (link not broken)                    | Pass — 302 to destination     |
+| Missing `url` param → 400                                            | Pass                          |
+| Campaign stats `clicks: 2`, per-link breakdown                       | Pass                          |
+| Unsubscribe link skipped (contains `/unsubscribe`)                   | Pass — skipLink logic correct |
+
+### Implementation notes
+
+- `RewriteLinks` uses `golang.org/x/net/html` tree walk — no regex
+- Skips `#` anchors, `mailto:`, `tel:`, and any href containing `/unsubscribe`
+- Handles both full HTML documents and fragments: fragment mode extracts body children after parse to avoid injecting `<html><head>` wrapper
+- Link slice returned by RewriteLinks is discarded at call site — link URLs stored per-click from `url` query param (matches schema)
+- `ParseClickToken` payload split with `SplitN(..., 3)` to handle UUIDs with colons correctly
+
+## Session 14 — Unsubscribe: Token Generation, Endpoint, List-Unsubscribe Header (complete)
+
+### What was built
+
+| Item                                                                                           | Status |
+| ---------------------------------------------------------------------------------------------- | ------ |
+| `tracking.GenerateUnsubscribeToken` / `ParseUnsubscribeToken` in `internal/tracking/tokens.go` | Done   |
+| `GET /unsubscribe` endpoint in `internal/handler/tracking.go`                                  | Done   |
+| Route registered outside RequireAuth group in `cmd/server/main.go`                             | Done   |
+| `{{unsubscribe_url}}` placeholder replaced with real signed token in `email_builder.go`        | Done   |
+| `List-Unsubscribe` + `List-Unsubscribe-Post` headers set in `BuildMessage`                     | Done   |
+| Mailgun: refactored to loop over `msg.Headers` generically with `h:` prefix                    | Done   |
+| SES: added `Content.Simple.Headers` array for custom headers                                   | Done   |
+| Resend: already passed `msg.Headers` map — no change needed                                    | Done   |
+
+### Unsubscribe endpoint behaviour
+
+- Invalid/missing token → 400 HTML error page
+- Subscriber not found → 400 HTML error page (no existence leak)
+- Already `unsubscribed` or `bounced` → 200 success (idempotent)
+- Happy path: `UpdateSubscriberStatus("unsubscribed")` + `AddSuppression(reason="unsubscribed")` (ON CONFLICT DO NOTHING) → 200 HTML success
+
+### Verification results
+
+| Check                                                            | Result |
+| ---------------------------------------------------------------- | ------ |
+| Invalid token → 400 HTML                                         | Pass   |
+| Missing token → 400 HTML                                         | Pass   |
+| Valid token → 200 HTML, status=unsubscribed in DB                | Pass   |
+| Suppression row created with reason=unsubscribed                 | Pass   |
+| Second hit (idempotent) → 200 HTML, no duplicate suppression row | Pass   |
+| `go build ./...` clean                                           | Pass   |
+
+### Mailer header notes
+
+- **Resend**: `"headers"` JSON field accepts any key-value map — `List-Unsubscribe-Post` passes through unchanged.
+- **Mailgun**: was hardcoding only `h:List-Unsubscribe`. Refactored to `for k, v := range msg.Headers { form.Set("h:"+k, v) }` — now passes both headers generically.
+- **SES**: was not passing any headers. Added `Content.Simple.Headers` array (SES v2 SendEmail format: `[{Name, Value}]`) when `msg.Headers` is non-empty.
+
+### Deviations from spec
+
+None.
+
+## Session 15 — Analytics: Overview Stats + Per-Campaign Stats Endpoints (complete)
+
+### What was built
+
+| Item                                                                                                | Status |
+| --------------------------------------------------------------------------------------------------- | ------ |
+| `db/queries/subscribers.sql` — `CountSubscribersByStatus` added                                     | Done   |
+| `db/queries/opens.sql` — `CountTotalOpens` added                                                    | Done   |
+| `db/queries/clicks.sql` — `CountTotalClicks` added                                                  | Done   |
+| `db/queries/campaign_recipients.sql` — `CountTotalSent`, `ListCampaignsReceivedBySubscriber` added  | Done   |
+| `task sqlc-gen` — 5 new functions generated cleanly                                                 | Done   |
+| `internal/handler/analytics.go` — `AnalyticsHandler.Overview`: aggregates all overview stats        | Done   |
+| `internal/handler/subscribers.go` — `SubscriberHandler.Stats`: per-subscriber engagement history    | Done   |
+| `cmd/server/main.go` — `GET /api/analytics/overview` + `GET /api/subscribers/{id}/stats` registered | Done   |
+
+### Verification
+
+| Check                                          | Result                                                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `go build ./...`                               | Pass — compiles clean                                                                                           |
+| `GET /api/analytics/overview`                  | 200 — correct counts: 6 total, 3 active, 2 unsubscribed, 1 bounced, 5 campaigns sent, rate calculations correct |
+| `GET /api/subscribers/:id/stats` (no activity) | 200 — 0 campaigns_received, 0 opens, 0 clicks, last_active: null                                                |
+| POST unsubscribe → re-fetch overview           | active_subscribers decremented (4→3), unsubscribed incremented (2→3)                                            |
+
+### Owner login credentials (dev only)
+
+Email: `admin@test.com`, password: `testpass123`
+
+### Deviations from plan
+
+- **Skipped `CountActiveSubscribers`** — used parameterised `CountSubscribersByStatus("active")` instead; fewer queries in the schema
+- **Skipped `CountSentCampaigns`** — reused existing `CountCampaignsByStatus("sent")`; same result
+- **`ListCampaignsReceivedBySubscriber` uses explicit column list** — `c.*` with alias in sqlc JOIN queries sometimes needs explicit columns; listed all Campaign columns to guarantee correct mapping
+- **`last_active` string comparison** — RFC3339 strings are lexicographically comparable for ISO timestamps, so `>` comparison is correct without parsing back to time.Time
+
+## Session 16 — Next

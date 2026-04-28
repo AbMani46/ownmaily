@@ -35,7 +35,18 @@ func NewMailer(provider, credentials string) (Mailer, error) {
 		return NewMailgunMailer(creds.APIKey, creds.Domain), nil
 
 	case "ses":
-		return nil, fmt.Errorf("provider not yet implemented")
+		var creds struct {
+			AccessKeyID     string `json:"access_key_id"`
+			SecretAccessKey string `json:"secret_access_key"`
+			Region          string `json:"region"`
+		}
+		if err := json.Unmarshal([]byte(credentials), &creds); err != nil {
+			return nil, fmt.Errorf("ses: invalid credentials: %w", err)
+		}
+		if creds.AccessKeyID == "" || creds.SecretAccessKey == "" || creds.Region == "" {
+			return nil, fmt.Errorf("ses: access_key_id, secret_access_key, and region are required")
+		}
+		return NewSESMailer(creds.AccessKeyID, creds.SecretAccessKey, creds.Region), nil
 
 	default:
 		return &LogMailer{}, nil

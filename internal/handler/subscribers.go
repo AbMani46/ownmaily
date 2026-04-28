@@ -707,6 +707,80 @@ func (h *SubscriberHandler) BulkTag(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *SubscriberHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	_, err = h.db.GetSubscriberByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "subscriber not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	campaigns, err := h.db.ListCampaignsReceivedBySubscriber(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+	if campaigns == nil {
+		campaigns = []db.Campaign{}
+	}
+
+	opens, err := h.db.ListOpensBySubscriber(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+	if opens == nil {
+		opens = []db.Open{}
+	}
+
+	clicks, err := h.db.ListClicksBySubscriber(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+	if clicks == nil {
+		clicks = []db.Click{}
+	}
+
+	var lastActive *string
+	for _, o := range opens {
+		if o.OpenedAt.Valid {
+			s := o.OpenedAt.Time.UTC().Format(time.RFC3339)
+			if lastActive == nil || s > *lastActive {
+				lastActive = &s
+			}
+		}
+	}
+	for _, c := range clicks {
+		if c.ClickedAt.Valid {
+			s := c.ClickedAt.Time.UTC().Format(time.RFC3339)
+			if lastActive == nil || s > *lastActive {
+				lastActive = &s
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"subscriber_id":      id,
+		"campaigns_received": len(campaigns),
+		"total_opens":        len(opens),
+		"total_clicks":       len(clicks),
+		"last_active":        lastActive,
+		"campaigns":          campaigns,
+		"opens":              opens,
+		"clicks":             clicks,
+	})
+}
+
 func (h *SubscriberHandler) Export(w http.ResponseWriter, r *http.Request) {
 	subs, err := h.db.ListAllSubscribers(r.Context())
 	if err != nil {

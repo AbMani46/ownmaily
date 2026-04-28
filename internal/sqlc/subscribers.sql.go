@@ -22,6 +22,17 @@ func (q *Queries) CountSubscribers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countSubscribersByStatus = `-- name: CountSubscribersByStatus :one
+SELECT COUNT(*) FROM subscribers WHERE status = $1
+`
+
+func (q *Queries) CountSubscribersByStatus(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countSubscribersByStatus, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSubscriber = `-- name: CreateSubscriber :one
 INSERT INTO subscribers (email, first_name, last_name, status, source)
 VALUES ($1, $2, $3, $4, $5)

@@ -33,6 +33,17 @@ func (q *Queries) CountRecipientsByStatus(ctx context.Context, arg CountRecipien
 	return count, err
 }
 
+const countTotalSent = `-- name: CountTotalSent :one
+SELECT COUNT(*) FROM campaign_recipients WHERE status = 'sent'
+`
+
+func (q *Queries) CountTotalSent(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTotalSent)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCampaignRecipient = `-- name: CreateCampaignRecipient :one
 INSERT INTO campaign_recipients (campaign_id, subscriber_id)
 VALUES ($1, $2)
@@ -72,6 +83,53 @@ func (q *Queries) GetRecipientStatus(ctx context.Context, arg GetRecipientStatus
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const listCampaignsReceivedBySubscriber = `-- name: ListCampaignsReceivedBySubscriber :many
+SELECT c.id, c.name, c.subject, c.preview_text, c.from_name, c.from_email, c.reply_to,
+       c.html_body, c.text_body, c.status, c.send_to_type, c.send_to_id,
+       c.scheduled_at, c.sent_at, c.created_at, c.updated_at
+FROM campaigns c
+JOIN campaign_recipients cr ON cr.campaign_id = c.id
+WHERE cr.subscriber_id = $1
+ORDER BY cr.sent_at DESC NULLS LAST
+`
+
+func (q *Queries) ListCampaignsReceivedBySubscriber(ctx context.Context, subscriberID pgtype.UUID) ([]Campaign, error) {
+	rows, err := q.db.Query(ctx, listCampaignsReceivedBySubscriber, subscriberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Campaign
+	for rows.Next() {
+		var i Campaign
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Subject,
+			&i.PreviewText,
+			&i.FromName,
+			&i.FromEmail,
+			&i.ReplyTo,
+			&i.HtmlBody,
+			&i.TextBody,
+			&i.Status,
+			&i.SendToType,
+			&i.SendToID,
+			&i.ScheduledAt,
+			&i.SentAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPendingRecipients = `-- name: ListPendingRecipients :many

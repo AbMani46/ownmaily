@@ -11,5 +11,8 @@ SELECT EXISTS(
     SELECT 1 FROM opens WHERE campaign_id = $1 AND subscriber_id = $2
 );
 
+-- name: CountTotalOpens :one
+SELECT COUNT(*) FROM opens;
+
 -- name: ListOpensBySubscriber :many
 SELECT * FROM opens WHERE subscriber_id = $1 ORDER BY opened_at DESC;

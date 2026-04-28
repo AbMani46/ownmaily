@@ -13,5 +13,8 @@ WHERE campaign_id = $1
 GROUP BY link_index, link_url
 ORDER BY link_index;
 
+-- name: CountTotalClicks :one
+SELECT COUNT(*) FROM clicks;
+
 -- name: ListClicksBySubscriber :many
 SELECT * FROM clicks WHERE subscriber_id = $1 ORDER BY clicked_at DESC;
