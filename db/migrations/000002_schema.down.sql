@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS clicks;
+DROP TABLE IF EXISTS opens;
+DROP TABLE IF EXISTS campaign_recipients;
+DROP TABLE IF EXISTS send_jobs;
+DROP TABLE IF EXISTS campaigns;
+DROP TABLE IF EXISTS subscriber_tags;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS list_subscribers;
+DROP TABLE IF EXISTS lists;
+DROP TABLE IF EXISTS suppressed_emails;
+DROP TABLE IF EXISTS subscribers;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS owner;
+DROP TABLE IF EXISTS settings;
