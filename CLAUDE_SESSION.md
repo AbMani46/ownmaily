@@ -226,38 +226,38 @@ None — all functions, routes, and middleware match the spec exactly.
 
 ### What was built
 
-| Item                                                                               | Status |
-| ---------------------------------------------------------------------------------- | ------ |
-| `internal/handler/subscribers.go` — SubscriberHandler with 8 methods              | Done   |
-| `GET /api/subscribers` — list with q/status/list_id/tag_id filters + pagination   | Done   |
-| `POST /api/subscribers` — create with email validation + suppression/dup checks   | Done   |
-| `GET /api/subscribers/export` — CSV stream (no buffer), RFC3339 created_at         | Done   |
-| `POST /api/subscribers/import` — CSV multipart, 10MB cap, counts imported/skipped/invalid | Done |
-| `GET /api/subscribers/{id}` — subscriber + tags + lists                            | Done   |
-| `PUT /api/subscribers/{id}` — update email/name/status, re-check if email changed | Done   |
-| `DELETE /api/subscribers/{id}` — suppress + delete, 204                           | Done   |
-| `POST /api/subscribers/{id}/unsubscribe` — status + suppression                   | Done   |
-| `db/queries/lists.sql` — added `ListListsForSubscriber`                            | Done   |
-| `db/queries/subscribers.sql` — added `ListAllSubscribers`, updated `UpdateSubscriber` (+ status field) | Done |
-| `sqlc.yml` — added `emit_json_tags: true` (all models now have snake_case json tags) | Done |
-| `cmd/server/main.go` — all 8 subscriber routes mounted inside RequireAuth group   | Done   |
+| Item                                                                                                   | Status |
+| ------------------------------------------------------------------------------------------------------ | ------ |
+| `internal/handler/subscribers.go` — SubscriberHandler with 8 methods                                   | Done   |
+| `GET /api/subscribers` — list with q/status/list_id/tag_id filters + pagination                        | Done   |
+| `POST /api/subscribers` — create with email validation + suppression/dup checks                        | Done   |
+| `GET /api/subscribers/export` — CSV stream (no buffer), RFC3339 created_at                             | Done   |
+| `POST /api/subscribers/import` — CSV multipart, 10MB cap, counts imported/skipped/invalid              | Done   |
+| `GET /api/subscribers/{id}` — subscriber + tags + lists                                                | Done   |
+| `PUT /api/subscribers/{id}` — update email/name/status, re-check if email changed                      | Done   |
+| `DELETE /api/subscribers/{id}` — suppress + delete, 204                                                | Done   |
+| `POST /api/subscribers/{id}/unsubscribe` — status + suppression                                        | Done   |
+| `db/queries/lists.sql` — added `ListListsForSubscriber`                                                | Done   |
+| `db/queries/subscribers.sql` — added `ListAllSubscribers`, updated `UpdateSubscriber` (+ status field) | Done   |
+| `sqlc.yml` — added `emit_json_tags: true` (all models now have snake_case json tags)                   | Done   |
+| `cmd/server/main.go` — all 8 subscriber routes mounted inside RequireAuth group                        | Done   |
 
 ### Verification
 
-| Check                                              | Result                                                  |
-| -------------------------------------------------- | ------------------------------------------------------- |
-| `task build`                                       | Pass — compiles clean                                   |
-| `POST /api/subscribers`                            | 201 with subscriber object (tags: [])                   |
-| `GET /api/subscribers`                             | 200 `{subscribers:[...], total:1, page:1, per_page:50}` |
-| `GET /api/subscribers/:id`                         | 200 with subscriber + tags + lists                      |
-| `GET /api/subscribers?q=test`                      | 200 with matching subscribers                           |
-| `GET /api/subscribers?status=active`               | 200 filtered by status                                  |
-| `GET /api/subscribers/export`                      | CSV download with correct headers                       |
-| `POST /api/subscribers/import` (3 valid, 1 dup, 1 bad) | `{imported:2, skipped:1, invalid:1}`             |
-| `PUT /api/subscribers/:id`                         | 200 with updated subscriber                             |
-| `POST /api/subscribers/:id/unsubscribe`            | 200 `{message:unsubscribed}`                            |
-| `DELETE /api/subscribers/:id`                      | 204 No Content                                          |
-| Re-create deleted subscriber                       | 409 `{error:suppressed}` — suppression enforced         |
+| Check                                                  | Result                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| `task build`                                           | Pass — compiles clean                                   |
+| `POST /api/subscribers`                                | 201 with subscriber object (tags: [])                   |
+| `GET /api/subscribers`                                 | 200 `{subscribers:[...], total:1, page:1, per_page:50}` |
+| `GET /api/subscribers/:id`                             | 200 with subscriber + tags + lists                      |
+| `GET /api/subscribers?q=test`                          | 200 with matching subscribers                           |
+| `GET /api/subscribers?status=active`                   | 200 filtered by status                                  |
+| `GET /api/subscribers/export`                          | CSV download with correct headers                       |
+| `POST /api/subscribers/import` (3 valid, 1 dup, 1 bad) | `{imported:2, skipped:1, invalid:1}`                    |
+| `PUT /api/subscribers/:id`                             | 200 with updated subscriber                             |
+| `POST /api/subscribers/:id/unsubscribe`                | 200 `{message:unsubscribed}`                            |
+| `DELETE /api/subscribers/:id`                          | 204 No Content                                          |
+| Re-create deleted subscriber                           | 409 `{error:suppressed}` — suppression enforced         |
 
 ### Auth method for testing
 
@@ -271,4 +271,58 @@ Seeded owner row directly in psql with known bcrypt hash. Email: `admin@test.com
 
 ---
 
-## Session 5 — Next
+## Session 5 — Lists: CRUD, Memberships, Double Opt-In (complete)
+
+### What was built
+
+| Item                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/mailer/confirmation.go` — ConfirmationMailer with GenerateToken, ValidateToken, SendConfirmation | Done   |
+| `internal/handler/lists.go` — ListHandler with 9 methods                                                   | Done   |
+| `GET /api/lists` — list all with subscriber_count per list                                                 | Done   |
+| `POST /api/lists` — create, name required                                                                  | Done   |
+| `GET /api/lists/{id}` — 404 if not found, includes subscriber_count                                        | Done   |
+| `PUT /api/lists/{id}` — 404 if not found, returns updated list + subscriber_count                          | Done   |
+| `DELETE /api/lists/{id}` — 409 if non-empty (unless force=true), cascade deletes memberships               | Done   |
+| `GET /api/lists/{id}/subscribers` — paginated with tags per subscriber                                     | Done   |
+| `POST /api/lists/{id}/subscribers` — inactive subscriber guard, already_member guard, double opt-in        | Done   |
+| `DELETE /api/lists/{id}/subscribers/{subscriberID}` — 204                                                  | Done   |
+| `GET /confirm` — public HMAC token validation + subscriber status → active                                 | Done   |
+| Routes wired in `cmd/server/main.go` — 8 auth routes + 1 public `/confirm` route                           | Done   |
+
+### Verification
+
+| Check                                         | Result                                                         |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `POST /api/lists`                             | 201 with list object, subscriber_count: 0                      |
+| `GET /api/lists`                              | 200 `{"lists":[...]}`                                          |
+| `GET /api/lists/:id`                          | 200 with list + subscriber_count                               |
+| `GET /api/lists/00000...` (bad id)            | 404 not_found                                                  |
+| `PUT /api/lists/:id`                          | 200 with updated list + subscriber_count                       |
+| `POST /api/lists/:id/subscribers`             | 200 `{"message":"added"}`                                      |
+| `POST /api/lists/:id/subscribers` (duplicate) | 409 already_member                                             |
+| `GET /api/lists/:id/subscribers`              | 200 with subscribers array, total: 1                           |
+| `GET /api/subscribers/:id`                    | lists array includes the list                                  |
+| `DELETE /api/lists/:id/subscribers/:sub_id`   | 204                                                            |
+| `DELETE /api/lists/:id` (non-empty)           | 409 list_not_empty with count in message                       |
+| `DELETE /api/lists/:id?force=true`            | 204                                                            |
+| Double opt-in: add subscriber to doi list     | 200 added, server log shows confirmation URL, status → pending |
+| `GET /confirm?token=...&sid=...&lid=...`      | 200 "Email confirmed. You are now subscribed."                 |
+| `GET /confirm?token=badtoken&...`             | 400 invalid_token                                              |
+| `GET /confirm` (missing params)               | 400 invalid_token                                              |
+
+### Token design
+
+- Token format: `base64url(message) + "." + base64url(HMAC-SHA256(message, appSecret))`
+- Message: `subscriberID:listID:unixTimestamp`
+- 48-hour expiry validated from timestamp embedded in token
+- sid/lid URL params cross-checked against decoded token payload
+
+### Deviations from plan
+
+- **ConfirmationMailer.db field kept but unused** — DB operations (GetSubscriberByID, IsSubscriberInList, UpdateSubscriberStatus) live in the handler for cleaner separation; mailer owns token logic only
+- **No separate `ts` query param** — timestamp is embedded inside the base64url-encoded token payload; token is self-contained
+
+---
+
+## Session 6 — Next
