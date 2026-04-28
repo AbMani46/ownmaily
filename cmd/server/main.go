@@ -43,14 +43,15 @@ func main() {
 
 	queries := db2.New(pool)
 
-	logMailer := &mailer.LogMailer{}
-	sendWorker := worker.NewSendWorker(queries, logMailer, cfg.InstallationURL, cfg.AppSecret)
+	activeMailer := loadMailer(context.Background(), queries)
+	sendWorker := worker.NewSendWorker(queries, activeMailer, cfg.InstallationURL, cfg.AppSecret)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go sendWorker.Start(ctx)
 
+	webhookHandler := handler.NewWebhookHandler(queries)
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
 	subscriberHandler := handler.NewSubscriberHandler(queries)
 	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
@@ -70,6 +71,8 @@ func main() {
 	r.With(middleware.RequireAuth(cfg.AppSecret, queries)).Get("/api/auth/me", authHandler.Me)
 
 	r.Get("/confirm", listHandler.ConfirmOptIn)
+	r.Post("/webhooks/resend", webhookHandler.Resend)
+	r.Post("/webhooks/mailgun", webhookHandler.Mailgun)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
@@ -135,4 +138,21 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// loadMailer reads smtp_provider + smtp_credentials from settings at startup.
+// Falls back to LogMailer on any error so startup never fails.
+// TODO Session 17: reload mailer when SMTP settings change via the settings API.
+func loadMailer(ctx context.Context, queries *db2.Queries) mailer.Mailer {
+	settings, err := queries.GetSettings(ctx)
+	if err != nil || settings.SmtpProvider == "" {
+		return &mailer.LogMailer{}
+	}
+	m, err := mailer.NewMailer(settings.SmtpProvider, string(settings.SmtpCredentials))
+	if err != nil {
+		log.Printf("warn: could not load mailer (%v), falling back to LogMailer", err)
+		return &mailer.LogMailer{}
+	}
+	log.Printf("mailer: %s loaded", m.Name())
+	return m
 }

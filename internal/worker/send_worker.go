@@ -118,6 +118,7 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 					SentAt:       pgtype.Timestamptz{},
 				})
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 
@@ -131,6 +132,7 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 					SentAt:       pgtype.Timestamptz{},
 				})
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 
@@ -141,6 +143,7 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 				SentAt:       pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			})
 			_ = w.db.IncrementSentCount(ctx, job.ID)
+			time.Sleep(500 * time.Millisecond)
 		}
 
 		if len(batch) < batchSize {

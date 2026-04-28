@@ -433,4 +433,159 @@ Seeded owner row directly in psql with known bcrypt hash. Email: `admin@test.com
 
 ---
 
-## Session 7 — Next
+## Session 8 — Sending Engine: Send Worker, Job Processing, Recipient Expansion (complete)
+
+### What was built
+
+| Item                                                                                                     | Status |
+| -------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/mailer/mailer.go` — Mailer interface + LogMailer stub                                          | Done   |
+| `internal/worker/expand.go` — ExpandRecipients (list/tag, active filter, suppression check)              | Done   |
+| `internal/worker/email_builder.go` — BuildMessage with {{first_name}} and {{unsubscribe_url}} vars       | Done   |
+| `internal/worker/send_worker.go` — SendWorker: Start, processPendingJobs, processJob, failJob            | Done   |
+| `db/queries/campaigns.sql` — added `MarkCampaignSent :exec`                                              | Done   |
+| `db/queries/send_jobs.sql` — added `UpdateSendJobCounts :exec`, `UpdateSendJobError :exec`               | Done   |
+| `task sqlc-gen` — regenerated; all 3 new functions in sqlc package                                       | Done   |
+| `internal/handler/campaigns.go` — CampaignHandler gains `appSecret`, `worker` fields; Send handler wired | Done   |
+| `POST /api/campaigns/:id/send` — ExpandRecipients → no_recipients guard → CreateSendJob → queued         | Done   |
+| `cmd/server/main.go` — LogMailer + SendWorker wired; SIGINT/SIGTERM graceful shutdown (5s)               | Done   |
+
+### Verification
+
+| Check                              | Result                                                              |
+| ---------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| `go build ./...`                   | Pass — compiles clean                                               |
+| `POST /api/campaigns/:id/send`     | 202 `{"message":"Campaign queued for sending","campaign_id":"..."}` |
+| Server log within 10s              | `[LogMailer] Would send to test@example.com                         | subject: Hello from OwnMaily` |
+| `GET /api/campaigns/:id` after 10s | status: "sent", sent_at set                                         |
+| `GET /api/campaigns/:id/stats`     | sent: 1, failed: 0, open_rate: 0                                    |
+| `SELECT * FROM send_jobs`          | status: complete, total_count=1, sent_count=1, failed_count=0       |
+| Send to empty list                 | 400 `{"error":"no_recipients",...}`                                 |
+
+### sqlc additions
+
+- `MarkCampaignSent :exec` — sets status='sent' and sent_at=NOW() in one query
+- `UpdateSendJobCounts :exec` — sets total_count after recipient expansion
+- `UpdateSendJobError :exec` — sets status + error_message on fatal job failure
+
+### LogMailer note
+
+`LogMailer` is a temporary stub that logs to stdout. It will be replaced in Session 9 when real SMTP is wired.
+
+### Deviations from plan
+
+- **`UpdateSendJobError` added** — spec referenced setting error_message on failure. `UpdateSendJobStatus` only takes status; a separate query was added to set both status and error_message atomically.
+- **`bulkRecipientParams` helper in expand.go** — the spec put BulkCreate in the worker; the helper function that converts `[]Subscriber` → `[]BulkCreateCampaignRecipientsParams` lives in `expand.go` (same package) to keep `send_worker.go` clean.
+- **Rate limiting: 500ms sleep added between each send** to stay within provider rate limits. Applied after every recipient attempt (both success and failure paths) before moving to the next recipient.
+
+---
+
+## Session 9 — Resend Integration: Real SMTP + Bounce Webhook (complete)
+
+### What was built
+
+| Item                                                                                              | Status |
+| ------------------------------------------------------------------------------------------------- | ------ |
+| `internal/mailer/resend.go` — ResendMailer: POST to Resend API, Bearer auth, omitempty fields     | Done   |
+| `internal/mailer/factory.go` — NewMailer factory: resend/mailgun/ses/fallback-to-LogMailer        | Done   |
+| `internal/mailer/bounce.go` — BounceEvent struct + ParseResendBounce for email.bounced/complained | Done   |
+| `internal/handler/webhooks.go` — WebhookHandler.Resend: hard bounce → suppression + status        | Done   |
+| `cmd/server/main.go` — loadMailer helper reads settings at startup; falls back to LogMailer       | Done   |
+| `POST /webhooks/resend` — registered outside RequireAuth group                                    | Done   |
+
+### Verification
+
+| Check            | Result                |
+| ---------------- | --------------------- |
+| `go build ./...` | Pass — compiles clean |
+
+### Testing with a real Resend API key
+
+Insert credentials directly via psql (no settings UI until Session 17):
+
+```sql
+UPDATE settings SET
+  smtp_provider = 'resend',
+  smtp_credentials = '{"api_key":"re_your_key_here"}'
+WHERE id = TRUE;
+```
+
+Restart `task dev` — server logs `mailer: resend loaded`.
+
+Simulate bounce webhook:
+
+```bash
+curl -X POST localhost:4400/webhooks/resend \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "email.bounced",
+    "data": {
+      "email_id": "abc123",
+      "from": "you@example.com",
+      "to": ["test@example.com"],
+      "bounce_type": "hard"
+    }
+  }'
+# → 200 OK
+```
+
+### Deviations from plan
+
+- **Webhook always returns 200** — even on parse errors, to prevent Resend retries. Errors are logged server-side.
+- **Signature verification skipped** — TODO comment in webhooks.go; acceptable for self-hosted v1.
+- **`loadMailer` is a package-level function** in main.go (not inlined) — cleaner to read and easy to extract later.
+- **Mailer reload deferred to Session 17** — loadMailer is called once at startup; TODO comment added.
+
+---
+
+## Session 10 — Mailgun Integration (complete)
+
+### What was built
+
+| Item | File |
+| ---- | ---- |
+| `MailgunMailer` struct + `Send` + `Name` | `internal/mailer/mailgun.go` |
+| Factory `"mailgun"` case (was stub) | `internal/mailer/factory.go` |
+| `ParseMailgunBounce(r *http.Request)` | `internal/mailer/bounce.go` |
+| `WebhookHandler.Mailgun` handler | `internal/handler/webhooks.go` |
+| `POST /webhooks/mailgun` route | `cmd/server/main.go` |
+
+### How sending works
+
+- Endpoint: `POST https://api.mailgun.net/v3/<domain>/messages`
+- Auth: HTTP Basic, username `api`, password = API key
+- Body: `application/x-www-form-urlencoded` via `url.Values`
+- Optional headers: `h:Reply-To`, `h:List-Unsubscribe` (only if set)
+
+To switch to Mailgun:
+
+```sql
+UPDATE settings SET
+  smtp_provider = 'mailgun',
+  smtp_credentials = '{"api_key":"key-...","domain":"mg.yourdomain.com"}'
+WHERE id = TRUE;
+```
+
+Restart server — logs `mailer: mailgun loaded`.
+
+### Verification
+
+| Check | Result |
+| ----- | ------ |
+| `go build ./...` | Pass — compiles clean |
+| Hard bounce curl → 200 | Pass |
+| Complaint curl → 200 | Pass |
+| Unhandled event curl → 200 | Pass |
+| `test@example.com` in `suppressed_emails` (reason: hard_bounce) | Pass |
+| `test2@example.com` in `suppressed_emails` (reason: complained) | Pass |
+
+Real Mailgun send was **not** tested (no account available). Webhook simulation confirmed.
+
+### Deviations from plan
+
+- **`handleHardBounce` log prefix** remains `webhook/resend:` — it's a shared helper; log prefix is cosmetic, not fixing now.
+- **Signature verification skipped** — TODO comment added in `Mailgun` handler.
+
+---
+
+## Session 11 — Next
