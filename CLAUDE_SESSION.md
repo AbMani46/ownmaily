@@ -325,4 +325,112 @@ Seeded owner row directly in psql with known bcrypt hash. Email: `admin@test.com
 
 ---
 
-## Session 6 — Next
+## Session 6 — Tags: CRUD, Subscriber Tagging, Bulk Tagging (complete)
+
+### What was built
+
+| Item                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------- | ------ |
+| `db/queries/tags.sql` — added `IsSubscriberTagged` query                                                   | Done   |
+| `task sqlc-gen` — regenerated; `IsSubscriberTagged` now in `internal/sqlc/tags.sql.go`                     | Done   |
+| `internal/handler/tags.go` — TagHandler with List, Create, Get, Update, Delete, ListSubscribers            | Done   |
+| `GET /api/tags` — lists all tags with subscriber_count                                                     | Done   |
+| `POST /api/tags` — trim+lowercase, 409 on duplicate name                                                   | Done   |
+| `GET /api/tags/{id}` — 404 if not found, includes subscriber_count                                         | Done   |
+| `PUT /api/tags/{id}` — 404 if not found, 409 on name conflict, returns updated tag + subscriber_count      | Done   |
+| `DELETE /api/tags/{id}` — 404 if not found, cascade removes subscriber_tags rows, 204                      | Done   |
+| `GET /api/tags/{id}/subscribers` — paginated with tags per subscriber                                      | Done   |
+| `GET /api/subscribers/{id}/tags` — list tags for a subscriber                                              | Done   |
+| `POST /api/subscribers/{id}/tags` — 404 if sub/tag not found, 409 already_tagged, 200 {"message":"tagged"} | Done   |
+| `DELETE /api/subscribers/{id}/tags/{tagID}` — 404 checks, 204                                              | Done   |
+| `POST /api/subscribers/bulk-tag` — add/remove, best-effort, max 500, returns processed count               | Done   |
+| Routes wired in `cmd/server/main.go` — bulk-tag registered before /{id} to avoid chi clash                 | Done   |
+
+### Verification
+
+| Check                                          | Result                                   |
+| ---------------------------------------------- | ---------------------------------------- |
+| `task build`                                   | Pass — compiles clean                    |
+| `POST /api/tags`                               | 201 `{...subscriber_count:0}`            |
+| `POST /api/tags` (duplicate)                   | 409 `{error:"duplicate"}`                |
+| `GET /api/tags`                                | 200 `{"tags":[{...}]}`                   |
+| `GET /api/tags/:id`                            | 200 with subscriber_count                |
+| `POST /api/subscribers/:id/tags`               | 200 `{"message":"tagged"}`               |
+| Subscriber detail after tag                    | tags array includes the tag              |
+| Tag subscriber_count after add                 | 1                                        |
+| `POST /api/subscribers/:id/tags` (duplicate)   | 409 `{error:"already_tagged"}`           |
+| `GET /api/subscribers/:id/tags`                | 200 `{"tags":[...]}`                     |
+| `GET /api/tags/:id/subscribers`                | 200 paginated with tags per subscriber   |
+| `POST /api/subscribers/bulk-tag` (2 subs, add) | 200 `{processed:2,tag_id:"..."}`         |
+| `GET /api/subscribers?tag_id=...`              | total:2 — filter working                 |
+| `DELETE /api/subscribers/:id/tags/:tag_id`     | 204                                      |
+| `PUT /api/tags/:id`                            | 200 with updated name + subscriber_count |
+| `DELETE /api/tags/:id`                         | 204                                      |
+
+### sqlc additions
+
+- `IsSubscriberTagged :one` — `SELECT EXISTS(...)` used by the individual add endpoint to detect duplicates before inserting
+
+### Deviations from plan
+
+- **`IsSubscriberTagged` added** — `AddTagToSubscriber` uses `ON CONFLICT DO NOTHING` so can't detect conflicts from the return value. Added a dedicated EXISTS query instead of changing the insert (the insert with ON CONFLICT is still used for bulk-tag where conflicts are intentionally silenced).
+
+---
+
+## Session 7 — Campaigns: CRUD, Status, Duplicate (complete)
+
+### What was built
+
+| Item                                                                                                                       | Status |
+| -------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `db/queries/campaigns.sql` — added `ListCampaignsByStatus`, `CountCampaignsByStatus`, `ScheduleCampaign`, `CancelCampaign` | Done   |
+| `task sqlc-gen` — regenerated; all 4 new functions in `internal/sqlc/campaigns.sql.go`                                     | Done   |
+| `internal/handler/campaigns.go` — CampaignHandler with all 11 methods                                                      | Done   |
+| `GET /api/campaigns` — paginated, optional `?status=` filter                                                               | Done   |
+| `POST /api/campaigns` — validates name/subject/from_name/from_email/@/send_to_type; creates draft                          | Done   |
+| `GET /api/campaigns/{id}` — 404 if not found                                                                               | Done   |
+| `PUT /api/campaigns/{id}` — 409 if sending/sent; preserves scheduled_at                                                    | Done   |
+| `DELETE /api/campaigns/{id}` — 409 if sending; 204                                                                         | Done   |
+| `GET /api/campaigns/{id}/preview` — returns html_body as text/html; charset=utf-8                                          | Done   |
+| `GET /api/campaigns/{id}/stats` — sent/failed/opens/clicks/rates/per-link breakdown                                        | Done   |
+| `POST /api/campaigns/{id}/send` — validates send_to_id/subject/from_email; sets queued; 202                                | Done   |
+| `POST /api/campaigns/{id}/schedule` — validates draft status, RFC3339, future time; sets scheduled                         | Done   |
+| `POST /api/campaigns/{id}/cancel` — validates scheduled status; clears scheduled_at; restores draft                        | Done   |
+| `POST /api/campaigns/{id}/duplicate` — copies all fields, name prefixed "Copy of ", status=draft                           | Done   |
+| Routes wired in `cmd/server/main.go`                                                                                       | Done   |
+
+### Verification
+
+| Check                                          | Result                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| `go build ./...`                               | Pass — compiles clean                                               |
+| `POST /api/campaigns`                          | 201 with campaign, status: "draft"                                  |
+| `GET /api/campaigns`                           | 200 `{"campaigns":[...], "total":1, "page":1, "per_page":50}`       |
+| `GET /api/campaigns?status=draft`              | 200 filtered to drafts, total correct                               |
+| `PUT /api/campaigns/:id`                       | 200 with updated fields                                             |
+| `GET /api/campaigns/:id/preview`               | 200 text/html response                                              |
+| `GET /api/campaigns/:id/stats`                 | 200 zeros for new campaign, links: []                               |
+| `POST /api/campaigns/:id/schedule`             | 200 status: "scheduled", scheduled_at set                           |
+| `POST /api/campaigns/:id/schedule` (past time) | 400 invalid_time                                                    |
+| `POST /api/campaigns/:id/cancel`               | 200 status: "draft", scheduled_at: null                             |
+| `POST /api/campaigns/:id/send`                 | 202 `{"message":"Campaign queued for sending","campaign_id":"..."}` |
+| `POST /api/campaigns/:id/duplicate`            | 201 name: "Copy of ...", status: "draft"                            |
+| `PUT /api/campaigns/:id` (status: sent)        | 409 campaign_locked                                                 |
+| `DELETE /api/campaigns/:id` (status: sending)  | 409 campaign_locked                                                 |
+
+### sqlc additions
+
+- `ListCampaignsByStatus :many` — paginated filter by status column
+- `CountCampaignsByStatus :one` — COUNT for total with status filter
+- `ScheduleCampaign :one` — sets status='scheduled' and scheduled_at in one query
+- `CancelCampaign :one` — sets status='draft' and scheduled_at=NULL in one query
+- `UpdateCampaign` already existed from Session 2 (includes scheduled_at param) — used as-is; PUT handler preserves existing scheduled_at
+
+### Deviations from plan
+
+- **`UpdateCampaign` already had `scheduled_at=$12`** — the Session 2 query includes scheduled_at as a parameter. The PUT handler fetches the existing campaign first and passes its ScheduledAt value to preserve it on content edits.
+- **`queued` status not locked for edits** — spec locks only `sending` and `sent`. A campaign in `queued` status can still be edited (this is correct per spec).
+
+---
+
+## Session 7 — Next

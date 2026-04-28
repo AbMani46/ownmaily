@@ -11,12 +11,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelCampaign = `-- name: CancelCampaign :one
+UPDATE campaigns
+SET status = 'draft', scheduled_at = NULL, updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, subject, preview_text, from_name, from_email, reply_to, html_body, text_body, status, send_to_type, send_to_id, scheduled_at, sent_at, created_at, updated_at
+`
+
+func (q *Queries) CancelCampaign(ctx context.Context, id pgtype.UUID) (Campaign, error) {
+	row := q.db.QueryRow(ctx, cancelCampaign, id)
+	var i Campaign
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Subject,
+		&i.PreviewText,
+		&i.FromName,
+		&i.FromEmail,
+		&i.ReplyTo,
+		&i.HtmlBody,
+		&i.TextBody,
+		&i.Status,
+		&i.SendToType,
+		&i.SendToID,
+		&i.ScheduledAt,
+		&i.SentAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countCampaigns = `-- name: CountCampaigns :one
 SELECT COUNT(*) FROM campaigns
 `
 
 func (q *Queries) CountCampaigns(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countCampaigns)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCampaignsByStatus = `-- name: CountCampaignsByStatus :one
+SELECT COUNT(*) FROM campaigns WHERE status = $1
+`
+
+func (q *Queries) CountCampaignsByStatus(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countCampaignsByStatus, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -159,6 +201,56 @@ func (q *Queries) ListCampaigns(ctx context.Context, arg ListCampaignsParams) ([
 	return items, nil
 }
 
+const listCampaignsByStatus = `-- name: ListCampaignsByStatus :many
+SELECT id, name, subject, preview_text, from_name, from_email, reply_to, html_body, text_body, status, send_to_type, send_to_id, scheduled_at, sent_at, created_at, updated_at FROM campaigns
+WHERE status = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListCampaignsByStatusParams struct {
+	Status string `json:"status"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
+}
+
+func (q *Queries) ListCampaignsByStatus(ctx context.Context, arg ListCampaignsByStatusParams) ([]Campaign, error) {
+	rows, err := q.db.Query(ctx, listCampaignsByStatus, arg.Status, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Campaign
+	for rows.Next() {
+		var i Campaign
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Subject,
+			&i.PreviewText,
+			&i.FromName,
+			&i.FromEmail,
+			&i.ReplyTo,
+			&i.HtmlBody,
+			&i.TextBody,
+			&i.Status,
+			&i.SendToType,
+			&i.SendToID,
+			&i.ScheduledAt,
+			&i.SentAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listScheduledCampaignsDue = `-- name: ListScheduledCampaignsDue :many
 SELECT id, name, subject, preview_text, from_name, from_email, reply_to, html_body, text_body, status, send_to_type, send_to_id, scheduled_at, sent_at, created_at, updated_at FROM campaigns
 WHERE status = 'scheduled' AND scheduled_at <= NOW()
@@ -199,6 +291,53 @@ func (q *Queries) ListScheduledCampaignsDue(ctx context.Context) ([]Campaign, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const markCampaignSent = `-- name: MarkCampaignSent :exec
+UPDATE campaigns
+SET status = 'sent', sent_at = NOW(), updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) MarkCampaignSent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markCampaignSent, id)
+	return err
+}
+
+const scheduleCampaign = `-- name: ScheduleCampaign :one
+UPDATE campaigns
+SET status = 'scheduled', scheduled_at = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, subject, preview_text, from_name, from_email, reply_to, html_body, text_body, status, send_to_type, send_to_id, scheduled_at, sent_at, created_at, updated_at
+`
+
+type ScheduleCampaignParams struct {
+	ID          pgtype.UUID        `json:"id"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
+}
+
+func (q *Queries) ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (Campaign, error) {
+	row := q.db.QueryRow(ctx, scheduleCampaign, arg.ID, arg.ScheduledAt)
+	var i Campaign
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Subject,
+		&i.PreviewText,
+		&i.FromName,
+		&i.FromEmail,
+		&i.ReplyTo,
+		&i.HtmlBody,
+		&i.TextBody,
+		&i.Status,
+		&i.SendToType,
+		&i.SendToID,
+		&i.ScheduledAt,
+		&i.SentAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateCampaign = `-- name: UpdateCampaign :one

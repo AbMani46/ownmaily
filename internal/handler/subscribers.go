@@ -498,6 +498,215 @@ func (h *SubscriberHandler) Import(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *SubscriberHandler) ListTags(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	_, err = h.db.GetSubscriberByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "subscriber not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	tags, err := h.db.ListTagsForSubscriber(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+	if tags == nil {
+		tags = []db.Tag{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
+}
+
+func (h *SubscriberHandler) AddTag(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	_, err = h.db.GetSubscriberByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "subscriber not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	var body struct {
+		TagID string `json:"tag_id"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	tagID, parseErr := parseUUID(body.TagID)
+	if parseErr != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid tag_id")
+		return
+	}
+
+	_, err = h.db.GetTagByID(r.Context(), tagID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "tag not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	tagged, err := h.db.IsSubscriberTagged(r.Context(), db.IsSubscriberTaggedParams{
+		SubscriberID: id,
+		TagID:        tagID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+	if tagged {
+		writeError(w, http.StatusConflict, "already_tagged", "Subscriber already has this tag")
+		return
+	}
+
+	if err := h.db.AddTagToSubscriber(r.Context(), db.AddTagToSubscriberParams{
+		SubscriberID: id,
+		TagID:        tagID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "tagged"})
+}
+
+func (h *SubscriberHandler) RemoveTag(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	tagID, err := parseUUID(chi.URLParam(r, "tagID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid tag_id")
+		return
+	}
+
+	_, err = h.db.GetSubscriberByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "subscriber not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	_, err = h.db.GetTagByID(r.Context(), tagID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "tag not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	if err := h.db.RemoveTagFromSubscriber(r.Context(), db.RemoveTagFromSubscriberParams{
+		SubscriberID: id,
+		TagID:        tagID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SubscriberHandler) BulkTag(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SubscriberIDs []string `json:"subscriber_ids"`
+		TagID         string   `json:"tag_id"`
+		Action        string   `json:"action"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	if body.Action != "add" && body.Action != "remove" {
+		writeError(w, http.StatusBadRequest, "bad_request", `action must be "add" or "remove"`)
+		return
+	}
+
+	tagID, parseErr := parseUUID(body.TagID)
+	if parseErr != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid tag_id")
+		return
+	}
+
+	_, err := h.db.GetTagByID(r.Context(), tagID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "tag not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	if len(body.SubscriberIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "subscriber_ids is required and must be non-empty")
+		return
+	}
+	if len(body.SubscriberIDs) > 500 {
+		writeError(w, http.StatusBadRequest, "bad_request", "subscriber_ids must not exceed 500")
+		return
+	}
+
+	var processed int
+	for _, sidStr := range body.SubscriberIDs {
+		subID, parseErr := parseUUID(sidStr)
+		if parseErr != nil {
+			continue
+		}
+		_, err := h.db.GetSubscriberByID(r.Context(), subID)
+		if err != nil {
+			continue
+		}
+		if body.Action == "add" {
+			_ = h.db.AddTagToSubscriber(r.Context(), db.AddTagToSubscriberParams{
+				SubscriberID: subID,
+				TagID:        tagID,
+			})
+		} else {
+			_ = h.db.RemoveTagFromSubscriber(r.Context(), db.RemoveTagFromSubscriberParams{
+				SubscriberID: subID,
+				TagID:        tagID,
+			})
+		}
+		processed++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"processed": processed,
+		"tag_id":    body.TagID,
+	})
+}
+
 func (h *SubscriberHandler) Export(w http.ResponseWriter, r *http.Request) {
 	subs, err := h.db.ListAllSubscribers(r.Context())
 	if err != nil {

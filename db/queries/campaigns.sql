@@ -38,3 +38,29 @@ DELETE FROM campaigns WHERE id = $1;
 -- name: ListScheduledCampaignsDue :many
 SELECT * FROM campaigns
 WHERE status = 'scheduled' AND scheduled_at <= NOW();
+
+-- name: ListCampaignsByStatus :many
+SELECT * FROM campaigns
+WHERE status = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountCampaignsByStatus :one
+SELECT COUNT(*) FROM campaigns WHERE status = $1;
+
+-- name: ScheduleCampaign :one
+UPDATE campaigns
+SET status = 'scheduled', scheduled_at = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: CancelCampaign :one
+UPDATE campaigns
+SET status = 'draft', scheduled_at = NULL, updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: MarkCampaignSent :exec
+UPDATE campaigns
+SET status = 'sent', sent_at = NOW(), updated_at = NOW()
+WHERE id = $1;

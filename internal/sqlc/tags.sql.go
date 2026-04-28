@@ -80,6 +80,22 @@ func (q *Queries) GetTagByName(ctx context.Context, name string) (Tag, error) {
 	return i, err
 }
 
+const isSubscriberTagged = `-- name: IsSubscriberTagged :one
+SELECT EXISTS(SELECT 1 FROM subscriber_tags WHERE subscriber_id = $1 AND tag_id = $2)
+`
+
+type IsSubscriberTaggedParams struct {
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+	TagID        pgtype.UUID `json:"tag_id"`
+}
+
+func (q *Queries) IsSubscriberTagged(ctx context.Context, arg IsSubscriberTaggedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isSubscriberTagged, arg.SubscriberID, arg.TagID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listSubscribersWithTag = `-- name: ListSubscribersWithTag :many
 SELECT s.id, s.email, s.first_name, s.last_name, s.status, s.source, s.created_at, s.updated_at FROM subscribers s
 JOIN subscriber_tags st ON st.subscriber_id = s.id

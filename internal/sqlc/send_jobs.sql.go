@@ -126,6 +126,39 @@ func (q *Queries) ListPendingSendJobs(ctx context.Context) ([]SendJob, error) {
 	return items, nil
 }
 
+const updateSendJobCounts = `-- name: UpdateSendJobCounts :exec
+UPDATE send_jobs
+SET total_count = $2, updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateSendJobCountsParams struct {
+	ID         pgtype.UUID `json:"id"`
+	TotalCount int32       `json:"total_count"`
+}
+
+func (q *Queries) UpdateSendJobCounts(ctx context.Context, arg UpdateSendJobCountsParams) error {
+	_, err := q.db.Exec(ctx, updateSendJobCounts, arg.ID, arg.TotalCount)
+	return err
+}
+
+const updateSendJobError = `-- name: UpdateSendJobError :exec
+UPDATE send_jobs
+SET status = $2, error_message = $3, updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateSendJobErrorParams struct {
+	ID           pgtype.UUID `json:"id"`
+	Status       string      `json:"status"`
+	ErrorMessage string      `json:"error_message"`
+}
+
+func (q *Queries) UpdateSendJobError(ctx context.Context, arg UpdateSendJobErrorParams) error {
+	_, err := q.db.Exec(ctx, updateSendJobError, arg.ID, arg.Status, arg.ErrorMessage)
+	return err
+}
+
 const updateSendJobStatus = `-- name: UpdateSendJobStatus :exec
 UPDATE send_jobs SET status = $2, updated_at = NOW() WHERE id = $1
 `

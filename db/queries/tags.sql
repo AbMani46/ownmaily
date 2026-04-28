@@ -27,6 +27,9 @@ ON CONFLICT DO NOTHING;
 -- name: RemoveTagFromSubscriber :exec
 DELETE FROM subscriber_tags WHERE subscriber_id = $1 AND tag_id = $2;
 
+-- name: IsSubscriberTagged :one
+SELECT EXISTS(SELECT 1 FROM subscriber_tags WHERE subscriber_id = $1 AND tag_id = $2);
+
 -- name: ListTagsForSubscriber :many
 SELECT t.* FROM tags t
 JOIN subscriber_tags st ON st.tag_id = t.id

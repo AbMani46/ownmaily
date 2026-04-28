@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
@@ -15,6 +20,7 @@ import (
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	"github.com/AbMani46/ownmaily/internal/middleware"
 	db2 "github.com/AbMani46/ownmaily/internal/sqlc"
+	"github.com/AbMani46/ownmaily/internal/worker"
 )
 
 func main() {
@@ -37,10 +43,20 @@ func main() {
 
 	queries := db2.New(pool)
 
+	logMailer := &mailer.LogMailer{}
+	sendWorker := worker.NewSendWorker(queries, logMailer, cfg.InstallationURL, cfg.AppSecret)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go sendWorker.Start(ctx)
+
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
 	subscriberHandler := handler.NewSubscriberHandler(queries)
 	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
 	listHandler := handler.NewListHandler(queries, confirmMailer)
+	tagHandler := handler.NewTagHandler(queries)
+	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
 
 	r := chi.NewRouter()
 
@@ -62,10 +78,14 @@ func main() {
 		r.Post("/api/subscribers", subscriberHandler.Create)
 		r.Get("/api/subscribers/export", subscriberHandler.Export)
 		r.Post("/api/subscribers/import", subscriberHandler.Import)
+		r.Post("/api/subscribers/bulk-tag", subscriberHandler.BulkTag)
 		r.Get("/api/subscribers/{id}", subscriberHandler.Get)
 		r.Put("/api/subscribers/{id}", subscriberHandler.Update)
 		r.Delete("/api/subscribers/{id}", subscriberHandler.Delete)
 		r.Post("/api/subscribers/{id}/unsubscribe", subscriberHandler.Unsubscribe)
+		r.Get("/api/subscribers/{id}/tags", subscriberHandler.ListTags)
+		r.Post("/api/subscribers/{id}/tags", subscriberHandler.AddTag)
+		r.Delete("/api/subscribers/{id}/tags/{tagID}", subscriberHandler.RemoveTag)
 
 		r.Get("/api/lists", listHandler.List)
 		r.Post("/api/lists", listHandler.Create)
@@ -75,12 +95,44 @@ func main() {
 		r.Get("/api/lists/{id}/subscribers", listHandler.ListSubscribers)
 		r.Post("/api/lists/{id}/subscribers", listHandler.AddSubscriber)
 		r.Delete("/api/lists/{id}/subscribers/{subscriberID}", listHandler.RemoveSubscriber)
+
+		r.Get("/api/tags", tagHandler.List)
+		r.Post("/api/tags", tagHandler.Create)
+		r.Get("/api/tags/{id}", tagHandler.Get)
+		r.Put("/api/tags/{id}", tagHandler.Update)
+		r.Delete("/api/tags/{id}", tagHandler.Delete)
+		r.Get("/api/tags/{id}/subscribers", tagHandler.ListSubscribers)
+
+		r.Get("/api/campaigns", campaignHandler.List)
+		r.Post("/api/campaigns", campaignHandler.Create)
+		r.Get("/api/campaigns/{id}", campaignHandler.Get)
+		r.Put("/api/campaigns/{id}", campaignHandler.Update)
+		r.Delete("/api/campaigns/{id}", campaignHandler.Delete)
+		r.Get("/api/campaigns/{id}/preview", campaignHandler.Preview)
+		r.Get("/api/campaigns/{id}/stats", campaignHandler.Stats)
+		r.Post("/api/campaigns/{id}/send", campaignHandler.Send)
+		r.Post("/api/campaigns/{id}/schedule", campaignHandler.Schedule)
+		r.Post("/api/campaigns/{id}/cancel", campaignHandler.Cancel)
+		r.Post("/api/campaigns/{id}/duplicate", campaignHandler.Duplicate)
 	})
 
 	r.Handle("/*", http.FileServer(http.Dir("frontend")))
 
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		log.Printf("shutting down...")
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
+
 	log.Printf("OwnMaily started on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
 	}
 }

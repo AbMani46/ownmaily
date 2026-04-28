@@ -18,3 +18,13 @@ UPDATE send_jobs SET failed_count = failed_count + 1, updated_at = NOW() WHERE i
 
 -- name: ListPendingSendJobs :many
 SELECT * FROM send_jobs WHERE status = 'pending' ORDER BY created_at ASC;
+
+-- name: UpdateSendJobCounts :exec
+UPDATE send_jobs
+SET total_count = $2, updated_at = NOW()
+WHERE id = $1;
+
+-- name: UpdateSendJobError :exec
+UPDATE send_jobs
+SET status = $2, error_message = $3, updated_at = NOW()
+WHERE id = $1;
