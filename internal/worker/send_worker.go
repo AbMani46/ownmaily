@@ -12,15 +12,15 @@ import (
 
 type SendWorker struct {
 	db              *db.Queries
-	mailer          mailer.Mailer
+	mailerStore     *mailer.Store
 	installationURL string
 	appSecret       string
 }
 
-func NewSendWorker(q *db.Queries, m mailer.Mailer, installationURL, appSecret string) *SendWorker {
+func NewSendWorker(q *db.Queries, s *mailer.Store, installationURL, appSecret string) *SendWorker {
 	return &SendWorker{
 		db:              q,
-		mailer:          m,
+		mailerStore:     s,
 		installationURL: installationURL,
 		appSecret:       appSecret,
 	}
@@ -123,7 +123,7 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 			}
 
 			msg := BuildMessage(campaign, sub, w.installationURL, w.appSecret)
-			if err := w.mailer.Send(msg); err != nil {
+			if err := w.mailerStore.Get().Send(msg); err != nil {
 				log.Printf("send worker: send to %s: %v", sub.Email, err)
 				_ = w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
 					CampaignID:   campaign.ID,

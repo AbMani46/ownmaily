@@ -19,3 +19,12 @@ DELETE FROM suppressed_emails WHERE email = $1;
 
 -- name: IsSuppressed :one
 SELECT EXISTS(SELECT 1 FROM suppressed_emails WHERE email = $1);
+
+-- name: SearchSuppressions :many
+SELECT * FROM suppressed_emails
+WHERE email ILIKE $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListAllSuppressions :many
+SELECT * FROM suppressed_emails ORDER BY created_at DESC;

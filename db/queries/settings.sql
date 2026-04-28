@@ -16,5 +16,10 @@ UPDATE settings SET
 WHERE id = TRUE
 RETURNING *;
 
+-- name: UpdateSMTPSettings :exec
+UPDATE settings
+SET smtp_provider = $1, smtp_credentials = $2, updated_at = NOW()
+WHERE id = TRUE;
+
 -- name: SetSetupComplete :exec
 UPDATE settings SET setup_complete = TRUE, updated_at = NOW() WHERE id = TRUE;

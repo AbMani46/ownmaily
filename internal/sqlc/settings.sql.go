@@ -43,6 +43,22 @@ func (q *Queries) SetSetupComplete(ctx context.Context) error {
 	return err
 }
 
+const updateSMTPSettings = `-- name: UpdateSMTPSettings :exec
+UPDATE settings
+SET smtp_provider = $1, smtp_credentials = $2, updated_at = NOW()
+WHERE id = TRUE
+`
+
+type UpdateSMTPSettingsParams struct {
+	SmtpProvider    string `json:"smtp_provider"`
+	SmtpCredentials []byte `json:"smtp_credentials"`
+}
+
+func (q *Queries) UpdateSMTPSettings(ctx context.Context, arg UpdateSMTPSettingsParams) error {
+	_, err := q.db.Exec(ctx, updateSMTPSettings, arg.SmtpProvider, arg.SmtpCredentials)
+	return err
+}
+
 const updateSettings = `-- name: UpdateSettings :one
 UPDATE settings SET
     site_name        = $1,

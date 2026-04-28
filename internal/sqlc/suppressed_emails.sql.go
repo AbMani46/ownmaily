@@ -72,6 +72,35 @@ func (q *Queries) IsSuppressed(ctx context.Context, email string) (bool, error) 
 	return exists, err
 }
 
+const listAllSuppressions = `-- name: ListAllSuppressions :many
+SELECT id, email, reason, created_at FROM suppressed_emails ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllSuppressions(ctx context.Context) ([]SuppressedEmail, error) {
+	rows, err := q.db.Query(ctx, listAllSuppressions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SuppressedEmail
+	for rows.Next() {
+		var i SuppressedEmail
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSuppressions = `-- name: ListSuppressions :many
 SELECT id, email, reason, created_at FROM suppressed_emails
 ORDER BY created_at DESC
@@ -85,6 +114,44 @@ type ListSuppressionsParams struct {
 
 func (q *Queries) ListSuppressions(ctx context.Context, arg ListSuppressionsParams) ([]SuppressedEmail, error) {
 	rows, err := q.db.Query(ctx, listSuppressions, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SuppressedEmail
+	for rows.Next() {
+		var i SuppressedEmail
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchSuppressions = `-- name: SearchSuppressions :many
+SELECT id, email, reason, created_at FROM suppressed_emails
+WHERE email ILIKE $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type SearchSuppressionsParams struct {
+	Email  string `json:"email"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
+}
+
+func (q *Queries) SearchSuppressions(ctx context.Context, arg SearchSuppressionsParams) ([]SuppressedEmail, error) {
+	rows, err := q.db.Query(ctx, searchSuppressions, arg.Email, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

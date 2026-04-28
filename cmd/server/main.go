@@ -43,8 +43,8 @@ func main() {
 
 	queries := db2.New(pool)
 
-	activeMailer := loadMailer(context.Background(), queries)
-	sendWorker := worker.NewSendWorker(queries, activeMailer, cfg.InstallationURL, cfg.AppSecret)
+	mailerStore := mailer.NewStore(loadMailer(context.Background(), queries))
+	sendWorker := worker.NewSendWorker(queries, mailerStore, cfg.InstallationURL, cfg.AppSecret)
 	schedulerWorker := worker.NewSchedulerWorker(queries, pool)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -62,6 +62,7 @@ func main() {
 	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
 	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
 	analyticsHandler := handler.NewAnalyticsHandler(queries)
+	settingsHandler := handler.NewSettingsHandler(queries, mailerStore)
 
 	r := chi.NewRouter()
 
@@ -128,6 +129,17 @@ func main() {
 
 		r.Get("/api/analytics/overview", analyticsHandler.Overview)
 		r.Get("/api/subscribers/{id}/stats", subscriberHandler.Stats)
+
+		r.Get("/api/settings", settingsHandler.Get)
+		r.Put("/api/settings/general", settingsHandler.UpdateGeneral)
+		r.Put("/api/settings/smtp", settingsHandler.UpdateSMTP)
+		r.Post("/api/settings/smtp/test", settingsHandler.TestSMTP)
+		r.Get("/api/settings/api-key", settingsHandler.GetAPIKey)
+		r.Post("/api/settings/api-key/regenerate", settingsHandler.RegenerateAPIKey)
+		r.Get("/api/settings/suppressions/export", settingsHandler.ExportSuppressions)
+		r.Get("/api/settings/suppressions", settingsHandler.ListSuppressions)
+		r.Post("/api/settings/suppressions", settingsHandler.AddSuppression)
+		r.Delete("/api/settings/suppressions/{email}", settingsHandler.DeleteSuppression)
 	})
 
 	r.Handle("/*", http.FileServer(http.Dir("frontend")))
@@ -153,7 +165,6 @@ func main() {
 
 // loadMailer reads smtp_provider + smtp_credentials from settings at startup.
 // Falls back to LogMailer on any error so startup never fails.
-// TODO Session 17: reload mailer when SMTP settings change via the settings API.
 func loadMailer(ctx context.Context, queries *db2.Queries) mailer.Mailer {
 	settings, err := queries.GetSettings(ctx)
 	if err != nil || settings.SmtpProvider == "" {

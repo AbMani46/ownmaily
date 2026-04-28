@@ -788,4 +788,53 @@ Email: `admin@test.com`, password: `testpass123`
 - **`ListCampaignsReceivedBySubscriber` uses explicit column list** — `c.*` with alias in sqlc JOIN queries sometimes needs explicit columns; listed all Campaign columns to guarantee correct mapping
 - **`last_active` string comparison** — RFC3339 strings are lexicographically comparable for ISO timestamps, so `>` comparison is correct without parsing back to time.Time
 
-## Session 16 — Next
+## Session 16 — Settings: General, SMTP, API Key, Suppression Management (complete)
+
+### What was built
+
+| Item                                                                                                           | Status |
+| -------------------------------------------------------------------------------------------------------------- | ------ |
+| `db/queries/settings.sql` — `UpdateSMTPSettings :exec` added                                                   | Done   |
+| `db/queries/suppressed_emails.sql` — `SearchSuppressions`, `ListAllSuppressions` added                         | Done   |
+| `task sqlc-gen` — 3 new functions generated cleanly                                                            | Done   |
+| `internal/mailer/store.go` — `Store` with `sync.RWMutex`, `Get()` (read lock), `Set()` (write lock)            | Done   |
+| `internal/worker/send_worker.go` — `mailer.Mailer` field replaced with `*mailer.Store`; calls `Get()` per send | Done   |
+| `internal/handler/settings.go` — `SettingsHandler` with all 10 endpoints                                       | Done   |
+| `cmd/server/main.go` — `mailerStore` replaces `activeMailer`; `settingsHandler` wired; 10 routes registered    | Done   |
+
+### Session 9 TODO resolved
+
+The `TODO Session 17: reload mailer when SMTP settings change` comment is removed. `mailer.Store` hot-swap is now in place — `PUT /api/settings/smtp` calls `mailerStore.Set(newMailer)` after saving to DB.
+
+### sqlc additions
+
+| Query                 | File                  | Type  |
+| --------------------- | --------------------- | ----- |
+| `UpdateSMTPSettings`  | settings.sql          | :exec |
+| `SearchSuppressions`  | suppressed_emails.sql | :many |
+| `ListAllSuppressions` | suppressed_emails.sql | :many |
+
+### Verification
+
+| Check                                            | Result                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------ |
+| `go build ./...`                                 | Pass — compiles clean                                              |
+| `GET /api/settings`                              | 200 — all fields, no `smtp_credentials`                            |
+| `PUT /api/settings/general`                      | 200 — updated fields returned, smtp_provider/credentials preserved |
+| `PUT /api/settings/smtp` (fake resend key)       | 200 — resend init doesn't validate key; mailerStore swapped        |
+| `PUT /api/settings/smtp` (invalid provider)      | 400 `invalid_provider`                                             |
+| `POST /api/settings/api-key/regenerate`          | 200 — full `om_...` key returned once with "Save this key" message |
+| `GET /api/settings/api-key`                      | 200 — `key_prefix` only, no full key                               |
+| API key auth (`Authorization: Bearer om_...`)    | 200 — `GET /api/settings` works with raw API key                   |
+| `POST /api/settings/suppressions`                | 200 — adds email with reason=manual                                |
+| `POST /api/settings/suppressions` (duplicate)    | 409 `already_suppressed`                                           |
+| `GET /api/settings/suppressions`                 | 200 — paginated list with total                                    |
+| `GET /api/settings/suppressions/export`          | CSV download with email, reason, created_at                        |
+| `DELETE /api/settings/suppressions/manual%40...` | 204 — email removed                                                |
+
+### Deviations from spec
+
+- **`PUT /api/settings/smtp` fake resend key → 200 not 400**: `NewResendMailer` stores the key without making an API call. The spec anticipated this with "OR 200 if resend accepts it". The 400 path is exercised by empty/missing credentials or invalid provider names.
+- **Suppression conflict detection uses `IsSuppressed` pre-check**: `AddSuppression` uses `ON CONFLICT DO NOTHING` (silent); added `IsSuppressed` check before insert to detect and return 409. Tiny TOCTOU race in concurrent inserts is acceptable for single-owner installs.
+
+## Session 17 — Next
