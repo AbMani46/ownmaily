@@ -2,12 +2,14 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	db "github.com/AbMani46/ownmaily/internal/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/time/rate"
 )
 
 type SendWorker struct {
@@ -15,6 +17,7 @@ type SendWorker struct {
 	mailerStore     *mailer.Store
 	installationURL string
 	appSecret       string
+	limiter         *rate.Limiter
 }
 
 func NewSendWorker(q *db.Queries, s *mailer.Store, installationURL, appSecret string) *SendWorker {
@@ -23,6 +26,7 @@ func NewSendWorker(q *db.Queries, s *mailer.Store, installationURL, appSecret st
 		mailerStore:     s,
 		installationURL: installationURL,
 		appSecret:       appSecret,
+		limiter:         rate.NewLimiter(rate.Limit(2), 1),
 	}
 }
 
@@ -118,7 +122,12 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 					SentAt:       pgtype.Timestamptz{},
 				})
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
-				time.Sleep(500 * time.Millisecond)
+				if err := w.limiter.Wait(ctx); err != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					return fmt.Errorf("rate limiter: %w", err)
+				}
 				continue
 			}
 
@@ -132,7 +141,12 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 					SentAt:       pgtype.Timestamptz{},
 				})
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
-				time.Sleep(500 * time.Millisecond)
+				if err := w.limiter.Wait(ctx); err != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					return fmt.Errorf("rate limiter: %w", err)
+				}
 				continue
 			}
 
@@ -143,7 +157,12 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 				SentAt:       pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			})
 			_ = w.db.IncrementSentCount(ctx, job.ID)
-			time.Sleep(500 * time.Millisecond)
+			if err := w.limiter.Wait(ctx); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return fmt.Errorf("rate limiter: %w", err)
+			}
 		}
 
 		if len(batch) < batchSize {

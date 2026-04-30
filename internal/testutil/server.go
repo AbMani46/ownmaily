@@ -1,81 +1,56 @@
-package main
+package testutil
 
 import (
-	"context"
-	"encoding/json"
-	"io/fs"
-	"log"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
+	"net"
+	"net/http/httptest"
+	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/joho/godotenv"
+	"github.com/jackc/pgx/v5/pgxpool"
 
-	dbembed "github.com/AbMani46/ownmaily/db"
-	"github.com/AbMani46/ownmaily/internal/config"
-	"github.com/AbMani46/ownmaily/internal/db"
 	"github.com/AbMani46/ownmaily/internal/handler"
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	"github.com/AbMani46/ownmaily/internal/middleware"
-	db2 "github.com/AbMani46/ownmaily/internal/sqlc"
+	sqlcdb "github.com/AbMani46/ownmaily/internal/sqlc"
 	"github.com/AbMani46/ownmaily/internal/worker"
 )
 
-func main() {
-	_ = godotenv.Load()
+const TestAppSecret = "test-secret-do-not-use"
 
-	cfg, err := config.Load()
+// NewTestServer wires up the full chi router with real handlers connected to
+// the provided DB. Returns an httptest.Server and cleanup func.
+func NewTestServer(t *testing.T, db *sqlcdb.Queries, pool *pgxpool.Pool) (*httptest.Server, func()) {
+	t.Helper()
+
+	// Pre-allocate a listener so we know the address before creating handlers.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		t.Fatalf("listen: %v", err)
 	}
 
-	if err := db.RunMigrations(cfg.DBUrl, dbembed.Migrations); err != nil {
-		log.Fatalf("migrations: %v", err)
-	}
+	installationURL := "http://" + ln.Addr().String()
 
-	pool, err := db.Connect(cfg.DBUrl)
-	if err != nil {
-		log.Fatalf("db: %v", err)
-	}
-	defer pool.Close()
+	mailerStore := mailer.NewStore(&mailer.LogMailer{})
+	sendWorker := worker.NewSendWorker(db, mailerStore, installationURL, TestAppSecret)
+	schedulerWorker := worker.NewSchedulerWorker(db, pool)
+	_ = schedulerWorker // not started in tests
 
-	queries := db2.New(pool)
-
-	mailerStore := mailer.NewStore(loadMailer(context.Background(), queries))
-	sendWorker := worker.NewSendWorker(queries, mailerStore, cfg.InstallationURL, cfg.AppSecret)
-	schedulerWorker := worker.NewSchedulerWorker(queries, pool)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go sendWorker.Start(ctx)
-	go schedulerWorker.Start(ctx)
-
-	webhookHandler := handler.NewWebhookHandler(queries)
-	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
-	subscriberHandler := handler.NewSubscriberHandler(queries)
-	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
-	listHandler := handler.NewListHandler(queries, confirmMailer)
-	tagHandler := handler.NewTagHandler(queries)
-	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
-	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
-	analyticsHandler := handler.NewAnalyticsHandler(queries)
-	settingsHandler := handler.NewSettingsHandler(queries, mailerStore)
+	webhookHandler := handler.NewWebhookHandler(db)
+	authHandler := handler.NewAuthHandler(db, TestAppSecret, installationURL)
+	subscriberHandler := handler.NewSubscriberHandler(db)
+	confirmMailer := mailer.NewConfirmationMailer(db, installationURL, TestAppSecret)
+	listHandler := handler.NewListHandler(db, confirmMailer)
+	tagHandler := handler.NewTagHandler(db)
+	campaignHandler := handler.NewCampaignHandler(db, installationURL, TestAppSecret, sendWorker)
+	trackingHandler := handler.NewTrackingHandler(db, TestAppSecret)
+	analyticsHandler := handler.NewAnalyticsHandler(db)
+	settingsHandler := handler.NewSettingsHandler(db, mailerStore)
 
 	r := chi.NewRouter()
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
-
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/logout", authHandler.Logout)
-	r.With(middleware.RequireAuth(cfg.AppSecret, queries)).Get("/api/auth/me", authHandler.Me)
+	r.With(middleware.RequireAuth(TestAppSecret, db)).Get("/api/auth/me", authHandler.Me)
 
 	r.Get("/confirm", listHandler.ConfirmOptIn)
 	r.Get("/unsubscribe", trackingHandler.Unsubscribe)
@@ -86,7 +61,7 @@ func main() {
 	r.Post("/webhooks/ses", webhookHandler.SES)
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
+		r.Use(middleware.RequireAuth(TestAppSecret, db))
 
 		r.Get("/api/subscribers", subscriberHandler.List)
 		r.Post("/api/subscribers", subscriberHandler.Create)
@@ -144,48 +119,9 @@ func main() {
 		r.Delete("/api/settings/suppressions/{email}", settingsHandler.DeleteSuppression)
 	})
 
-	// Serve Vue build with SPA fallback — must be mounted after all /api/* routes.
-	distFS := os.DirFS("frontend/dist")
-	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if _, err := fs.Stat(distFS, path); err == nil {
-			http.FileServer(http.Dir("frontend/dist")).ServeHTTP(w, r)
-			return
-		}
-		http.ServeFile(w, r, "frontend/dist/index.html")
-	})
+	srv := httptest.NewUnstartedServer(r)
+	srv.Listener = ln
+	srv.Start()
 
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
-
-	go func() {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		<-quit
-		log.Printf("shutting down...")
-		cancel()
-		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutCancel()
-		_ = srv.Shutdown(shutCtx)
-	}()
-
-	log.Printf("OwnMaily started on :%s", cfg.Port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server: %v", err)
-	}
-}
-
-// loadMailer reads smtp_provider + smtp_credentials from settings at startup.
-// Falls back to LogMailer on any error so startup never fails.
-func loadMailer(ctx context.Context, queries *db2.Queries) mailer.Mailer {
-	settings, err := queries.GetSettings(ctx)
-	if err != nil || settings.SmtpProvider == "" {
-		return &mailer.LogMailer{}
-	}
-	m, err := mailer.NewMailer(settings.SmtpProvider, string(settings.SmtpCredentials))
-	if err != nil {
-		log.Printf("warn: could not load mailer (%v), falling back to LogMailer", err)
-		return &mailer.LogMailer{}
-	}
-	log.Printf("mailer: %s loaded", m.Name())
-	return m
+	return srv, srv.Close
 }

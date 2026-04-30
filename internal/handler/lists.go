@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	db "github.com/AbMani46/ownmaily/internal/sqlc"
@@ -73,6 +74,11 @@ func (h *ListHandler) Create(w http.ResponseWriter, r *http.Request) {
 		DoubleOptIn: body.DoubleOptIn,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "duplicate", "List name already exists")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
 		return
 	}
@@ -145,6 +151,11 @@ func (h *ListHandler) Update(w http.ResponseWriter, r *http.Request) {
 		DoubleOptIn: body.DoubleOptIn,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "duplicate", "List name already exists")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
 		return
 	}

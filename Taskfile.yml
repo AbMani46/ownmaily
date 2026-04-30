@@ -54,3 +54,18 @@ tasks:
     desc: Open a psql shell to the dev database
     cmds:
       - psql "${DB_URL}"
+
+  test:
+    desc: Run all tests (requires Postgres on :5433)
+    cmds:
+      - go test ./... -v -timeout 120s
+
+  frontend-dev:
+    desc: Start Vue dev server on :5173
+    cmds:
+      - pnpm --dir frontend dev
+
+  frontend-build:
+    desc: Build Vue for production (outputs to frontend/dist)
+    cmds:
+      - pnpm --dir frontend build
