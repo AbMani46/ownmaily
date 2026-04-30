@@ -19,6 +19,9 @@ const routes = [
       { path: 'campaigns/new', component: () => import('@/views/CampaignEditView.vue'), meta: { title: 'New Campaign' } },
       { path: 'campaigns/:id/edit', component: () => import('@/views/CampaignEditView.vue'), meta: { title: 'Edit Campaign' } },
       { path: 'campaigns/:id/stats', component: () => import('@/views/CampaignStatsView.vue'), meta: { title: 'Campaign Stats' } },
+      { path: 'analytics', component: () => import('@/views/AnalyticsView.vue'), meta: { title: 'Analytics' } },
+      { path: 'settings', redirect: '/settings/general' },
+      { path: 'settings/:section', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings' } },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
@@ -33,6 +36,10 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isAuthenticated) {
     return '/login'
+  }
+  // If authenticated, redirect /setup to /dashboard
+  if (to.path === '/setup' && auth.isAuthenticated) {
+    return '/dashboard'
   }
 })
 

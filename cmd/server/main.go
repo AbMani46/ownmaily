@@ -55,6 +55,7 @@ func main() {
 	go sendWorker.Start(ctx)
 	go schedulerWorker.Start(ctx)
 
+	setupHandler := handler.NewSetupHandler(queries, cfg.AppSecret, mailerStore)
 	webhookHandler := handler.NewWebhookHandler(queries)
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
 	subscriberHandler := handler.NewSubscriberHandler(queries)
@@ -67,11 +68,19 @@ func main() {
 	settingsHandler := handler.NewSettingsHandler(queries, mailerStore)
 
 	r := chi.NewRouter()
+	r.Use(setupGuard(queries))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	// Setup API — no auth required, guarded internally by setup_complete flag
+	r.Post("/api/setup/owner", setupHandler.CreateOwner)
+	r.Put("/api/setup/settings", setupHandler.UpdateSettings)
+	r.Put("/api/setup/smtp", setupHandler.UpdateSMTP)
+	r.Post("/api/setup/test-smtp", setupHandler.TestSMTP)
+	r.Post("/api/setup/complete", setupHandler.Complete)
 
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/logout", authHandler.Logout)
@@ -171,6 +180,33 @@ func main() {
 	log.Printf("OwnMaily started on :%s", cfg.Port)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+// setupGuard redirects to /setup if setup is not complete.
+// Skips API routes, setup routes, public tracking/webhook routes, and health.
+func setupGuard(queries *db2.Queries) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			if strings.HasPrefix(path, "/api/") ||
+				strings.HasPrefix(path, "/setup") ||
+				strings.HasPrefix(path, "/track/") ||
+				strings.HasPrefix(path, "/unsubscribe") ||
+				strings.HasPrefix(path, "/confirm") ||
+				strings.HasPrefix(path, "/webhooks/") ||
+				strings.HasPrefix(path, "/embed/") ||
+				path == "/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			settings, err := queries.GetSettings(r.Context())
+			if err != nil || !settings.SetupComplete {
+				http.Redirect(w, r, "/setup", http.StatusFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 

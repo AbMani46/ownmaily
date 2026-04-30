@@ -18,5 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
     api.post('/api/auth/logout').catch(() => {})
   }
 
-  return { token, isAuthenticated, login, logout }
+  function setToken(t) {
+    token.value = t
+    localStorage.setItem('om_token', t)
+  }
+
+  return { token, isAuthenticated, login, logout, setToken }
 })

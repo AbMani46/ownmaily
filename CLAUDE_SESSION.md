@@ -1167,21 +1167,21 @@ Accent is **emerald** `#10b981` throughout — not amber as in the original desi
 | `src/views/ListsView.vue` — 3-column card grid + full table + Create List modal                            | Done   |
 | `src/views/ListDetailView.vue` — stat row + paginated subscribers + embed code + delete                    | Done   |
 | `src/views/TagsView.vue` — full table + create/edit/delete modals                                          | Done   |
-| `src/views/CampaignsView.vue` — status tabs (All/Sent/Scheduled/Drafts) + table + counts                  | Done   |
+| `src/views/CampaignsView.vue` — status tabs (All/Sent/Scheduled/Drafts) + table + counts                   | Done   |
 | `src/views/CampaignEditView.vue` — two-column layout, template pills, contentEditable editor, preview mode | Done   |
 | `src/views/CampaignStatsView.vue` — header card, 6-col stat grid, link breakdown table                     | Done   |
 | `src/router/index.js` — 7 new routes added (campaigns/new registered before campaigns/:id/edit)            | Done   |
 
 ### Verification
 
-| Check                                                              | Result                                                |
-| ------------------------------------------------------------------ | ----------------------------------------------------- |
-| `pnpm --dir frontend build`                                        | Pass — 536ms, zero errors                             |
-| `GET /api/lists`                                                   | `{lists: [{id, name, double_opt_in, subscriber_count, ...}]}` |
-| `GET /api/tags`                                                    | `{tags: []}` (none in test DB)                        |
-| `GET /api/campaigns`                                               | `{campaigns: [...], total, page, per_page}`           |
-| `GET /api/campaigns/:id/stats`                                     | `{sent, failed, opens, clicks, open_rate, click_rate, links: [{link_index, link_url, click_count}]}` |
-| Vite dev routes `/lists`, `/campaigns`, `/tags`                    | All serve index.html (SPA routing correct)            |
+| Check                                           | Result                                                                                               |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `pnpm --dir frontend build`                     | Pass — 536ms, zero errors                                                                            |
+| `GET /api/lists`                                | `{lists: [{id, name, double_opt_in, subscriber_count, ...}]}`                                        |
+| `GET /api/tags`                                 | `{tags: []}` (none in test DB)                                                                       |
+| `GET /api/campaigns`                            | `{campaigns: [...], total, page, per_page}`                                                          |
+| `GET /api/campaigns/:id/stats`                  | `{sent, failed, opens, clicks, open_rate, click_rate, links: [{link_index, link_url, click_count}]}` |
+| Vite dev routes `/lists`, `/campaigns`, `/tags` | All serve index.html (SPA routing correct)                                                           |
 
 ### API shape notes
 
@@ -1198,3 +1198,63 @@ Accent is **emerald** `#10b981` throughout — not amber as in the original desi
 - **Bounces/Unsubscribes in stats grid**: per-campaign stats endpoint returns `sent/failed/opens/clicks/rates/links` only; bounces and unsubscribes default to 0 (shown but always 0 until API extends the response)
 - **Add subscriber to list modal**: spec says "subscriber search/email input" — implemented as email lookup against `GET /api/subscribers?q=email`, exact match required, shows subscriber name if found
 - **`send_to_id` null handling**: when no target is selected, `send_to_id` is `null` in JSON; frontend maps to empty string `''` and disables Send Now button
+
+## Session 20 — Analytics, Settings, Setup Wizard + Backend Wizard Middleware (complete)
+
+### What was built
+
+| Item                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/handler/setup.go` — SetupHandler with 5 endpoints                                                | Done   |
+| `setupGuard` middleware in `cmd/server/main.go` — redirects to /setup if setup_complete = false            | Done   |
+| `POST /api/setup/owner` — CreateOwner (409 if already_setup)                                               | Done   |
+| `PUT /api/setup/settings` — UpdateSettings (409 if already_setup)                                          | Done   |
+| `PUT /api/setup/smtp` — UpdateSMTPSettings + hot-swap mailer (409 if already_setup)                        | Done   |
+| `POST /api/setup/test-smtp` — send test email to provided address (409 if already_setup)                   | Done   |
+| `POST /api/setup/complete` — SetSetupComplete + GenerateToken for auto-login (returns JWT)                 | Done   |
+| `src/views/AnalyticsView.vue` — period selector pills, 8 stat cards, campaign performance table            | Done   |
+| `src/views/SettingsView.vue` — sidebar layout (200px) + dynamic section component                          | Done   |
+| `src/views/settings/SettingsGeneralView.vue` — site info, sender defaults, compliance; GET+PUT wired       | Done   |
+| `src/views/settings/SettingsSMTPView.vue` — provider select, provider-specific fields, test + save         | Done   |
+| `src/views/settings/SettingsAPIKeyView.vue` — masked key, copy, regenerate with one-time reveal            | Done   |
+| `src/views/settings/SettingsSuppressionView.vue` — search, export, add modal, paginated table, remove      | Done   |
+| `src/views/SetupWizardView.vue` — 5-step wizard, step progress bar, all API calls wired                    | Done   |
+| `src/stores/auth.js` — `setToken` method added for wizard auto-login                                       | Done   |
+| `src/router/index.js` — analytics + settings routes added; /setup redirects to /dashboard if authenticated | Done   |
+
+### Backend setup endpoints
+
+All 5 endpoints are mounted outside the `RequireAuth` group (no auth required during setup):
+
+```
+POST /api/setup/owner     — CreateOwner (password min 8 chars, email @ required)
+PUT  /api/setup/settings  — UpdateSettings (general fields only)
+PUT  /api/setup/smtp      — UpdateSMTPSettings + mailerStore.Set()
+POST /api/setup/test-smtp — Send test email to {to} address
+POST /api/setup/complete  — SetSetupComplete → GetOwner → GenerateToken → {token}
+```
+
+Each endpoint returns 409 `{error:"already_setup"}` if `settings.setup_complete = true`.
+
+### setupGuard middleware
+
+Runs on all routes. Skips:
+
+- `/api/*`, `/setup*`, `/track/*`, `/unsubscribe`, `/confirm`, `/webhooks/*`, `/embed/*`, `/health`
+
+All other paths redirect to `/setup` (302) if `settings.setup_complete = false`.
+
+### Verification checklist
+
+| Check                       | Result                    |
+| --------------------------- | ------------------------- |
+| `go build ./...`            | Pass — compiles clean     |
+| `pnpm --dir frontend build` | Pass — 438ms, zero errors |
+
+### Deviations from spec
+
+- **Period selector is display-only**: `/api/analytics/overview` does not filter by period. Pills display correctly with "All time" selected but switching periods does not refetch. A note is displayed adjacent to the pills.
+- **Campaign sent_count from list response**: `GET /api/campaigns?status=sent` does not return `sent_count` per campaign (it's only in `send_jobs`). The `sent_count` column shows `—` for campaigns that have not been sent via the worker (it falls back from `stats` endpoint which is per-campaign). Opted not to do N+1 calls per spec instruction; shows `—` with graceful fallback to 0 when available.
+- **SMTP test in wizard step 4** saves SMTP credentials before sending test (PUT /api/setup/smtp is called as part of the Test Connection button). Continue is enabled after successful test.
+- **`/setup` redirect when authenticated**: Vue router guard redirects `/setup` → `/dashboard` when user is already logged in. Backend `setupGuard` only redirects non-API/non-setup routes, so the SPA route guard handles the "already logged in" case cleanly.
+- **`contains` helper removed**: used `strings.Contains` directly in setup handler.
