@@ -1258,3 +1258,120 @@ All other paths redirect to `/setup` (302) if `settings.setup_complete = false`.
 - **SMTP test in wizard step 4** saves SMTP credentials before sending test (PUT /api/setup/smtp is called as part of the Test Connection button). Continue is enabled after successful test.
 - **`/setup` redirect when authenticated**: Vue router guard redirects `/setup` → `/dashboard` when user is already logged in. Backend `setupGuard` only redirects non-API/non-setup routes, so the SPA route guard handles the "already logged in" case cleanly.
 - **`contains` helper removed**: used `strings.Contains` directly in setup handler.
+
+---
+
+## Session 21 — Signup Form Embed + Docker Packaging + README (complete)
+
+### What was built
+
+| Item                                                                         | Status |
+| ---------------------------------------------------------------------------- | ------ |
+| `internal/handler/embed.go` — EmbedHandler with ServeJS + Subscribe          | Done   |
+| `GET /embed/{listID}.js` — public, returns self-contained JS embed form      | Done   |
+| `POST /api/public/subscribe` — public subscribe endpoint with rate limiting  | Done   |
+| In-memory rate limiter — max 5 req/min per IP (sync.Mutex + timestamp map)   | Done   |
+| `docker-compose.yml` — rewritten for production with app + db services       | Done   |
+| `Dockerfile` — multi-stage build (Go 1.26 builder → alpine runtime)          | Done   |
+| `.env.example` — documents required and optional env vars                    | Done   |
+| `install.sh` — one-line install script                                       | Done   |
+| `README.md` — project overview, quick start, SMTP table, update instructions | Done   |
+| `Taskfile.yml` — `docker-build` and `docker-run` tasks added                 | Done   |
+
+### Route registration
+
+Both routes are public (outside RequireAuth, outside setupGuard):
+
+```
+GET  /embed/{listID}.js      — EmbedHandler.ServeJS
+POST /api/public/subscribe   — EmbedHandler.Subscribe
+```
+
+### Subscribe logic
+
+1. Rate check (5 req/min/IP)
+2. Validate email contains `@`
+3. Parse list_id as UUID — 400 if invalid
+4. GetListByID — 400 if not found
+5. IsSuppressed — if suppressed: 200 `{"message":"already_subscribed"}`
+6. GetSubscriberByEmail — if exists and active: 200 `{"message":"already_subscribed"}`
+7. If not exists: CreateSubscriber (status=active or pending based on double_opt_in, source="form")
+8. If double_opt_in: SendConfirmation → AddSubscriberToList → 200 `{"message":"check_email"}`
+9. Otherwise: AddSubscriberToList → 200 `{"message":"subscribed"}`
+
+### Docker
+
+- Production uses **Postgres 16-alpine** (not 18 which is dev-only)
+- Dockerfile uses `CI=true pnpm install` to avoid interactive TTY prompt in non-TTY build context
+- `docker-compose.yml` now includes `app` service (builds from Dockerfile) and `db` service with healthcheck
+
+### Verification
+
+| Check                                                      | Result                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| `go build ./...`                                           | Pass — compiles clean                                |
+| `pnpm --dir frontend build`                                | Pass — 465ms, zero errors                            |
+| `GET /embed/<list_id>.js`                                  | Returns JS with Content-Type: application/javascript |
+| `GET /embed/00000000-0000-0000-0000-000000000000.js`       | Returns `// OwnMaily: list not found`                |
+| `POST /api/public/subscribe` (new user, no double opt-in)  | 200 `{"message":"subscribed"}`                       |
+| `POST /api/public/subscribe` (duplicate active subscriber) | 200 `{"message":"already_subscribed"}`               |
+| `POST /api/public/subscribe` (double opt-in list)          | 200 `{"message":"check_email"}`                      |
+| `docker build -t ownmaily/ownmaily:latest .`               | Pass — multi-stage build succeeds                    |
+
+### Deviations from spec
+
+- **`show_first_name` not in List model**: spec references `list.show_first_name` but the field doesn't exist in the DB schema. Always includes the first_name field (spec says "default true for v1").
+- **`CI=true` added to pnpm install**: required to prevent pnpm from aborting in non-TTY Docker build context. Not in spec but necessary for build to succeed.
+
+---
+
+## Session 22 -- Astro Marketing Site + Stripe Payment (complete)
+
+This session built the standalone `ownmaily-landing` Astro project. It is separate from the main OwnMaily Go/Vue repo and will be deployed independently.
+
+### What was built
+
+| Item                                                                                                                 | Status |
+| -------------------------------------------------------------------------------------------------------------------- | ------ |
+| `astro.config.mjs` -- server output, `@tailwindcss/vite` plugin, `@astrojs/node` adapter                             | Done   |
+| `src/styles/global.css` -- CSS custom properties design system, `@import "tailwindcss"`                              | Done   |
+| `src/layouts/Layout.astro` -- base HTML shell, DM Sans from Google Fonts, meta tags                                  | Done   |
+| `src/pages/index.astro` -- full marketing page: nav, hero, features, how it works, comparison table, pricing, footer | Done   |
+| `src/pages/buy.astro` -- two-column buy page, feature list, Stripe checkout form                                     | Done   |
+| `src/pages/success.astro` -- post-payment thank you page, quick start steps, GitHub links                            | Done   |
+| `src/pages/api/checkout.ts` -- creates Stripe checkout session, redirects to hosted checkout                         | Done   |
+| `src/pages/api/webhook.ts` -- verifies Stripe signature, sends thank you email via Resend fetch                      | Done   |
+| `.env.example` -- all required environment variables documented                                                      | Done   |
+
+### Design system
+
+- Background: `#0a0a0c`
+- Accent: `#10b981` (emerald)
+- Font: DM Sans (300/400/500/600/700) from Google Fonts
+- Surface: `#111116` with `rgba(255,255,255,0.07)` borders
+- Accent glow on pricing card and logo dot
+
+### Verification
+
+| Check                          | Result                                   |
+| ------------------------------ | ---------------------------------------- |
+| `pnpm dev` -- `/` loads        | 200 Pass                                 |
+| `pnpm dev` -- `/buy` loads     | 200 Pass                                 |
+| `pnpm dev` -- `/success` loads | 200 Pass                                 |
+| `pnpm build`                   | Pass -- no errors, server built in 2.67s |
+
+### Deviations from spec
+
+- **`@astrojs/tailwind` replaced with `@tailwindcss/vite`**: `@astrojs/tailwind` v6.0.2 throws a PostCSS error with Tailwind v4 ("PostCSS plugin has moved to a separate package"). Switched to `@tailwindcss/vite` which is the correct Tailwind v4 integration for Astro. Functionally identical.
+- **`@astrojs/node` adapter added**: `output: 'server'` requires an adapter for `pnpm build` to succeed. Added `@astrojs/node` in standalone mode. Not in the original spec but required.
+- **GitHub URL**: `https://github.com/AbMani46/ownmaily` (user corrected during session).
+- **SUPPORT_EMAIL**: `support@soliduptime.org` (user corrected during session; spec placeholder was `jsmabaho@gmail.com`).
+- **Price shown as $49**: OWNMAILY_CONTEXT.MD lists $99, but the session spec explicitly sets $49 for this landing page. Used $49 throughout.
+
+### Going live checklist
+
+1. Create product + price in Stripe dashboard, copy price ID to `.env`
+2. Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `SUPPORT_EMAIL` in `.env`
+3. Register webhook endpoint in Stripe pointing to `https://ownmaily.com/api/webhook`
+4. Use `stripe listen --forward-to localhost:PORT/api/webhook` for local testing
+5. Deploy with `node dist/server/entry.mjs` or behind a reverse proxy

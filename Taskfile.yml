@@ -69,3 +69,13 @@ tasks:
     desc: Build Vue for production (outputs to frontend/dist)
     cmds:
       - pnpm --dir frontend build
+
+  docker-build:
+    desc: Build production Docker image
+    cmds:
+      - docker build -t ownmaily/ownmaily:latest .
+
+  docker-run:
+    desc: Run production image locally
+    cmds:
+      - docker compose -f docker-compose.yml up -d

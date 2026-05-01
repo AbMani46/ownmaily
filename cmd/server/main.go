@@ -61,6 +61,7 @@ func main() {
 	subscriberHandler := handler.NewSubscriberHandler(queries)
 	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
 	listHandler := handler.NewListHandler(queries, confirmMailer)
+	embedHandler := handler.NewEmbedHandler(queries, cfg.InstallationURL, confirmMailer)
 	tagHandler := handler.NewTagHandler(queries)
 	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
 	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
@@ -93,6 +94,9 @@ func main() {
 	r.Post("/webhooks/resend", webhookHandler.Resend)
 	r.Post("/webhooks/mailgun", webhookHandler.Mailgun)
 	r.Post("/webhooks/ses", webhookHandler.SES)
+
+	r.Get("/embed/{listID}.js", embedHandler.ServeJS)
+	r.Post("/api/public/subscribe", embedHandler.Subscribe)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
