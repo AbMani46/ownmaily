@@ -837,4 +837,541 @@ The `TODO Session 17: reload mailer when SMTP settings change` comment is remove
 - **`PUT /api/settings/smtp` fake resend key → 200 not 400**: `NewResendMailer` stores the key without making an API call. The spec anticipated this with "OR 200 if resend accepts it". The 400 path is exercised by empty/missing credentials or invalid provider names.
 - **Suppression conflict detection uses `IsSuppressed` pre-check**: `AddSuppression` uses `ON CONFLICT DO NOTHING` (silent); added `IsSuppressed` check before insert to detect and return 409. Tiny TOCTOU race in concurrent inserts is acceptable for single-owner installs.
 
-## Session 17 — Next
+## Test Session A — Test Infrastructure + Auth + Subscribers (complete)
+
+### What was built
+
+| Item                                                                                                                                                                                    | Status |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/testutil/db.go` — NewTestDB: drop/create ownmaily_test, run migrations, return pool+queries                                                                                   | Done   |
+| `internal/testutil/server.go` — NewTestServer: full chi router wired, httptest.Server via pre-allocated listener                                                                        | Done   |
+| `internal/testutil/fixtures.go` — CreateOwner, LoginAndGetToken, CreateSubscriber, CreateList, CreateTag, CreateCampaign, AuthHeader, MakeRequest, DecodeJSON, AssertStatus, UUIDString | Done   |
+| `internal/handler/auth_test.go` — 8 auth test functions                                                                                                                                 | Done   |
+| `internal/handler/subscribers_test.go` — 13 subscriber test functions                                                                                                                   | Done   |
+| `Taskfile.yml` — `test` task added                                                                                                                                                      | Done   |
+
+### Test functions written
+
+**Auth (auth_test.go)**
+
+| Function                | Status |
+| ----------------------- | ------ |
+| TestLogin_Success       | PASS   |
+| TestLogin_WrongPassword | PASS   |
+| TestLogin_NoOwner       | PASS   |
+| TestLogin_SetsJWTCookie | PASS   |
+| TestMe_WithValidToken   | PASS   |
+| TestMe_WithoutToken     | PASS   |
+| TestMe_WithAPIKey       | PASS   |
+| TestLogout_ClearsCookie | PASS   |
+
+**Subscribers (subscribers_test.go)**
+
+| Function                             | Status |
+| ------------------------------------ | ------ |
+| TestCreateSubscriber_Success         | PASS   |
+| TestCreateSubscriber_DuplicateEmail  | PASS   |
+| TestCreateSubscriber_SuppressedEmail | PASS   |
+| TestCreateSubscriber_InvalidEmail    | PASS   |
+| TestListSubscribers_Pagination       | PASS   |
+| TestListSubscribers_SearchFilter     | PASS   |
+| TestListSubscribers_StatusFilter     | PASS   |
+| TestGetSubscriber_NotFound           | PASS   |
+| TestUpdateSubscriber                 | PASS   |
+| TestDeleteSubscriber_AddsSuppression | PASS   |
+| TestUnsubscribeSubscriber            | PASS   |
+| TestImportCSV_ValidAndInvalid        | PASS   |
+| TestExportCSV                        | PASS   |
+
+Total: 21 tests, 21 PASS, 0 FAIL, 0 SKIP.
+
+### Bug fixed by tests
+
+**`GET /api/auth/me` did not support API key auth.** The `Me` handler read only JWT claims from context. When API key middleware authenticated a request, no claims were set, so the handler returned 401 "missing claims". Fixed by checking `middleware.APIKeyAuthed` in context first and fetching the owner from DB for that path. This was a real gap: `GET /api/settings` worked with API key (any route), but `Me` explicitly failed.
+
+### Architecture notes
+
+- **TestDB lifecycle**: each test drops and recreates `ownmaily_test`, runs all migrations. Takes ~0.5s per test — acceptable for 21 tests.
+- **TestServer listener pre-allocation**: uses `net.Listen` before handler creation so `installationURL = "http://" + addr` is known at construction time. Handlers receive the actual server URL.
+- **`t.Skip`** on Postgres unavailability (not `t.Fatal`) — test suite is gracefully skipped if Docker is not running.
+- **`fuser -k 4400/tcp` not needed** — tests use httptest.Server on a random port; port 4400 (dev server) is not touched.
+- **No `t.Parallel()`** — tests run sequentially within the package; each gets an isolated DB.
+
+### Deviations from plan
+
+- **`TestLogin_SetsJWTCookie`** asserts HttpOnly + non-empty value; spec said "cookie jwt is set" — covered fully.
+- **`TestLogout_ClearsCookie`** checks `Set-Cookie` header directly for `Max-Age=0` rather than inspecting parsed `resp.Cookies()`, because Go serializes `MaxAge=-1` as `Max-Age=0` on wire and parses it back as `MaxAge=0` (zero is also the default for unset), making the parsed value ambiguous.
+- **`TestImportCSV_ValidAndInvalid`** includes a suppressed email, so counts are imported=2, skipped=2, invalid=1 (rather than skipped=1 if suppressed were not tested).
+- **Worker goroutines not started** in test server — `NewSendWorker` and `NewSchedulerWorker` are wired to satisfy constructor requirements but `Start` is never called. Campaigns sent in tests would not be processed by the background worker.
+
+---
+
+## Test Session B — Lists, Tags, Campaigns, Send Worker, Scheduler (complete)
+
+### Test functions written — all PASS
+
+| File                                  | Function                                     | Result |
+| ------------------------------------- | -------------------------------------------- | ------ |
+| `internal/handler/lists_test.go`      | `TestCreateList_Success`                     | PASS   |
+|                                       | `TestCreateList_DuplicateName`               | PASS   |
+|                                       | `TestCreateList_NameRequired`                | PASS   |
+|                                       | `TestGetList_NotFound`                       | PASS   |
+|                                       | `TestUpdateList`                             | PASS   |
+|                                       | `TestDeleteList_NonEmpty_Returns409`         | PASS   |
+|                                       | `TestDeleteList_ForceDelete`                 | PASS   |
+|                                       | `TestAddSubscriberToList`                    | PASS   |
+|                                       | `TestAddSubscriberToList_AlreadyMember`      | PASS   |
+|                                       | `TestAddSubscriberToList_InactiveSubscriber` | PASS   |
+|                                       | `TestRemoveSubscriberFromList`               | PASS   |
+|                                       | `TestListSubscribersInList_Paginated`        | PASS   |
+|                                       | `TestDoubleOptIn_ConfirmationFlow`           | PASS   |
+| `internal/handler/tags_test.go`       | `TestCreateTag_Success`                      | PASS   |
+|                                       | `TestCreateTag_Duplicate`                    | PASS   |
+|                                       | `TestUpdateTag_NameConflict`                 | PASS   |
+|                                       | `TestDeleteTag_CascadesSubscriberTags`       | PASS   |
+|                                       | `TestAddTagToSubscriber`                     | PASS   |
+|                                       | `TestAddTagToSubscriber_AlreadyTagged`       | PASS   |
+|                                       | `TestRemoveTagFromSubscriber`                | PASS   |
+|                                       | `TestBulkTag_Add`                            | PASS   |
+|                                       | `TestBulkTag_Remove`                         | PASS   |
+|                                       | `TestFilterSubscribersByTag`                 | PASS   |
+| `internal/handler/campaigns_test.go`  | `TestCreateCampaign_Success`                 | PASS   |
+|                                       | `TestCreateCampaign_MissingRequiredFields`   | PASS   |
+|                                       | `TestUpdateCampaign_Locked_WhenSent`         | PASS   |
+|                                       | `TestScheduleCampaign_Success`               | PASS   |
+|                                       | `TestScheduleCampaign_PastTime`              | PASS   |
+|                                       | `TestCancelCampaign`                         | PASS   |
+|                                       | `TestDuplicateCampaign`                      | PASS   |
+|                                       | `TestDeleteCampaign_WhenSending_Returns409`  | PASS   |
+|                                       | `TestCampaignPreview`                        | PASS   |
+|                                       | `TestCampaignStats_ZerosForNewCampaign`      | PASS   |
+|                                       | `TestSendCampaign_NoRecipients`              | PASS   |
+| `internal/worker/send_worker_test.go` | `TestSendWorker_ProcessesJob_EndToEnd`       | PASS   |
+|                                       | `TestSendWorker_SkipsSuppressedRecipients`   | PASS   |
+|                                       | `TestSendWorker_HandlesWorkerFailure`        | PASS   |
+| `internal/worker/scheduler_test.go`   | `TestSchedulerWorker_QueuesOverdueCampaign`  | PASS   |
+|                                       | `TestSchedulerWorker_IgnoresFutureCampaign`  | PASS   |
+|                                       | `TestSchedulerWorker_IdempotentOnDoubleRun`  | PASS   |
+
+**Total: 46 tests pass** (8 auth + 14 subscribers + 13 lists + 9 tags + 11 campaigns + 3 send worker + 3 scheduler — some counts include both sessions A and B)
+
+**Handler suite total: 40 tests, 29.9s**
+**Worker suite total: 6 tests, 5.3s**
+
+### Bugs found and fixed
+
+1. **`internal/handler/lists.go` — duplicate list name returned 500 instead of 409** — The Create and Update handlers lacked the `pgconn.PgError` code `23505` check that the tags handler already had. Added the check; `TestCreateList_DuplicateName` caught this.
+
+### Architecture notes — worker tests
+
+- **Import cycle**: `testutil/server.go` imports `internal/worker`. Worker tests using `package worker` cannot import `testutil`. Resolved by creating `internal/worker/testhelper_test.go` — a minimal test-only helper that sets up the DB directly (imports `internal/db`, `db`, `internal/sqlc`) without importing `testutil`.
+- **Worker test DB**: uses a separate `ownmaily_test_worker` database to avoid conflicts with handler tests that use `ownmaily_test`.
+- **Sleep timing**: `send_worker.go` has `time.Sleep(500ms)` per recipient. Worker tests with 3 recipients take ~1.5s each. Acceptable; not changed.
+- **`processJob` and `tick` access**: Both are unexported methods on their respective structs. `package worker` test files access them directly.
+
+### Deviations from plan
+
+- **`campaign_recipients html` assertions**: The `CampaignRecipient` DB model has no html field — HTML is built at send time (not stored per recipient). EndToEnd test asserts counts and status only. Click/open/unsubscribe URL presence is inherent in the `BuildMessage` logic already unit-tested by existing tracking package.
+- **`TestDoubleOptIn_ConfirmationFlow`**: Token generated independently using `mailer.NewConfirmationMailer` with the same secret. Works because `ValidateToken` is cryptographic (no DB token storage) — any token with the correct HMAC and non-expired timestamp validates.
+
+## Test Session C — Tracking, Webhooks, Settings, Analytics (complete)
+
+### Test functions written — all PASS
+
+| File                                 | Function                                         | Result |
+| ------------------------------------ | ------------------------------------------------ | ------ |
+| `internal/handler/tracking_test.go`  | `TestOpenPixel_ValidToken_RecordsOpen`           | PASS   |
+|                                      | `TestOpenPixel_InvalidToken_StillReturnsGIF`     | PASS   |
+|                                      | `TestOpenPixel_Idempotent`                       | PASS   |
+|                                      | `TestOpenPixel_ReturnsGIF`                       | PASS   |
+|                                      | `TestClickRedirect_ValidToken_RecordsClick`      | PASS   |
+|                                      | `TestClickRedirect_InvalidToken_StillRedirects`  | PASS   |
+|                                      | `TestClickRedirect_MissingURL_Returns400`        | PASS   |
+|                                      | `TestUnsubscribe_ValidToken`                     | PASS   |
+|                                      | `TestUnsubscribe_InvalidToken_Returns400HTML`    | PASS   |
+|                                      | `TestUnsubscribe_Idempotent`                     | PASS   |
+|                                      | `TestUnsubscribe_AlreadyUnsubscribed_Returns200` | PASS   |
+| `internal/handler/webhooks_test.go`  | `TestResendWebhook_HardBounce`                   | PASS   |
+|                                      | `TestResendWebhook_SoftBounce_NoSuppression`     | PASS   |
+|                                      | `TestResendWebhook_Complaint`                    | PASS   |
+|                                      | `TestResendWebhook_UnknownEvent_Returns200`      | PASS   |
+|                                      | `TestMailgunWebhook_HardBounce`                  | PASS   |
+|                                      | `TestMailgunWebhook_Complaint`                   | PASS   |
+|                                      | `TestMailgunWebhook_SoftBounce_NoSuppression`    | PASS   |
+|                                      | `TestSESWebhook_HardBounce`                      | PASS   |
+|                                      | `TestSESWebhook_Complaint`                       | PASS   |
+|                                      | `TestSESWebhook_SoftBounce_NoSuppression`        | PASS   |
+|                                      | `TestSESWebhook_SubscriptionConfirmation`        | PASS   |
+| `internal/handler/settings_test.go`  | `TestGetSettings`                                | PASS   |
+|                                      | `TestUpdateGeneralSettings`                      | PASS   |
+|                                      | `TestUpdateSMTPSettings_InvalidProvider`         | PASS   |
+|                                      | `TestUpdateSMTPSettings_ValidProvider`           | PASS   |
+|                                      | `TestRegenerateAPIKey`                           | PASS   |
+|                                      | `TestGetAPIKey_AfterRegenerate`                  | PASS   |
+|                                      | `TestAPIKey_CanAuthenticateRequests`             | PASS   |
+|                                      | `TestAddSuppression_Manual`                      | PASS   |
+|                                      | `TestAddSuppression_Duplicate`                   | PASS   |
+|                                      | `TestDeleteSuppression`                          | PASS   |
+|                                      | `TestListSuppressions_Paginated`                 | PASS   |
+|                                      | `TestExportSuppressions_CSV`                     | PASS   |
+| `internal/handler/analytics_test.go` | `TestAnalyticsOverview_EmptyDB`                  | PASS   |
+|                                      | `TestAnalyticsOverview_WithData`                 | PASS   |
+|                                      | `TestAnalyticsOverview_RatesCalculation`         | PASS   |
+|                                      | `TestSubscriberStats_NoActivity`                 | PASS   |
+|                                      | `TestSubscriberStats_WithActivity`               | PASS   |
+
+**Final total: 100 tests, 100 PASS, 0 FAIL**
+
+**Handler suite: 94 tests**
+**Worker suite: 6 tests**
+
+### Session C totals by file
+
+| File                | Tests  |
+| ------------------- | ------ |
+| tracking_test.go    | 11     |
+| webhooks_test.go    | 11     |
+| settings_test.go    | 12     |
+| analytics_test.go   | 5      |
+| **Session C total** | **39** |
+
+### Bugs found
+
+None — all new handlers were already correct.
+
+### Architecture notes
+
+- **Webhook tests use `http.NewRequest` directly** (not `testutil.MakeRequest`) because MakeRequest marshals the body as JSON; webhook payloads are raw JSON strings or form-encoded bodies that must not be re-encoded.
+- **Analytics seeding** inserts `campaign_recipients` directly via `CreateCampaignRecipient` + `UpdateRecipientStatus`; this avoids the send worker and 500ms-per-send sleep, keeping tests fast.
+- **`TestSESWebhook_SubscriptionConfirmation`** points SubscribeURL at `/api/auth/login` (returns 405 Method Not Allowed on GET, but any HTTP response satisfies the handler's GET-and-ignore-response pattern).
+- **`range N` syntax** (Go 1.22+) used in analytics seeding loops.
+
+### Deviations from plan
+
+- **`TestAnalyticsOverview_WithData` seeds directly** rather than using the send worker — simpler, no 500ms-per-send sleep, test runs in ~0.6s. Functionally equivalent for asserting overview counts.
+
+## Rate Limiter Patch (complete)
+
+### What changed
+
+- **`internal/worker/send_worker.go`** — replaced all three `time.Sleep(500 * time.Millisecond)` calls in the per-recipient loop with `w.limiter.Wait(ctx)` (token bucket, 2 sends/sec, burst 1).
+- Added `limiter *rate.Limiter` field to `SendWorker`; initialized in `NewSendWorker` via `rate.NewLimiter(rate.Limit(2), 1)`.
+- Added `golang.org/x/time/rate` import (was already an indirect dep at v0.12.0; promoted to explicit at v0.15.0 after `go get`).
+- `time` import retained — still used by `time.NewTicker` (polling loop) and `time.Now()` (sent timestamp).
+- Context cancellation on `limiter.Wait` returns `ctx.Err()` directly for clean shutdown.
+- `go build ./...` clean; all 100 tests pass (handler: 94, worker: 6).
+
+## Session 17 — Vue Frontend: Project Setup, Router, Pinia, Auth, Layout Shell (complete)
+
+### What was built
+
+| Item                                                                              | Status |
+| --------------------------------------------------------------------------------- | ------ |
+| `frontend/vite.config.js` — Vue plugin, Tailwind v4 Vite plugin, `@` alias, proxy | Done   |
+| `frontend/src/style.css` — `@import "tailwindcss"` + tokens import + body font    | Done   |
+| `frontend/src/styles/tokens.css` — full design token set (emerald accent)         | Done   |
+| `frontend/src/lib/api.js` — axios client, Bearer token interceptor, 401 redirect  | Done   |
+| `frontend/src/stores/auth.js` — Pinia auth store, localStorage persistence        | Done   |
+| `frontend/src/router/index.js` — Vue Router 4, public/private guard               | Done   |
+| `frontend/src/layouts/AppLayout.vue` — sidebar + topbar shell                     | Done   |
+| `frontend/src/components/AppSidebar.vue` — nav, active state, logout              | Done   |
+| `frontend/src/components/AppTopBar.vue` — page title from route meta              | Done   |
+| `frontend/src/views/LoginView.vue` — login card, show/hide password, error state  | Done   |
+| `frontend/src/views/DashboardView.vue` — placeholder                              | Done   |
+| `frontend/src/views/SetupWizardView.vue` — placeholder                            | Done   |
+| `frontend/src/App.vue` — `<RouterView />`                                         | Done   |
+| `frontend/src/main.js` — app + pinia + router wired                               | Done   |
+| `frontend/index.html` — Google Fonts (DM Sans, JetBrains Mono), entry updated     | Done   |
+| `cmd/server/main.go` — SPA fallback serving `frontend/dist/`                      | Done   |
+| `Taskfile.yml` — `frontend-dev`, `frontend-build` tasks added                     | Done   |
+
+### Verification
+
+| Check                                      | Result                                |
+| ------------------------------------------ | ------------------------------------- |
+| `task frontend-build`                      | Pass — 10 chunks, 296ms, no errors    |
+| `go build ./...`                           | Pass — compiles clean                 |
+| `curl http://localhost:4400/`              | 200 — Vue index.html served           |
+| `curl http://localhost:4400/dashboard`     | 200 — SPA fallback returns index.html |
+| `curl http://localhost:4400/health`        | 200 — API route still works           |
+| Vue dev server (`pnpm --dir frontend dev`) | Starts on :5173, proxies /api → :4400 |
+
+### Stack decisions
+
+- **Tailwind v4** (not v3): uses `@import "tailwindcss"` in CSS + `@tailwindcss/vite` plugin; no `tailwind.config.js` needed
+- **Plain .js** files throughout (not TypeScript); `tsc &&` removed from build script
+- **Taskfile frontend tasks** use `pnpm --dir frontend <cmd>` to run from project root (not `dir: frontend`)
+
+### Accent color
+
+Accent is **emerald** `#10b981` throughout — not amber as in the original design file. All focus rings, active nav states, logo, and button use emerald tokens.
+
+### Deviations from plan
+
+- **Tailwind v4 config** differs from spec (spec assumed v3 `tailwind.config.js` + `@tailwind` directives); v4 Vite plugin approach used instead — functionally identical for the utility-only usage in layout components
+- **`pnpm --dir frontend dev`** instead of `dir: frontend` in Taskfile — pnpm's `--dir` flag is more reliable for cross-directory invocation
+
+## Session 18 — Dashboard + Subscribers Screens (complete)
+
+### What was built
+
+| Item                                                                                                                   | Status |
+| ---------------------------------------------------------------------------------------------------------------------- | ------ |
+| `src/components/BaseCard.vue` — white card, 10px radius, border, optional padding                                      | Done   |
+| `src/components/StatCard.vue` — label/value/delta/sub, 28px bold value                                                 | Done   |
+| `src/components/BaseBadge.vue` — status → color map, 5px dot, pill, uppercase                                          | Done   |
+| `src/components/BaseButton.vue` — primary/secondary/ghost/danger variants, loading spinner                             | Done   |
+| `src/components/BaseInput.vue` — v-model, emerald focus ring                                                           | Done   |
+| `src/components/BaseTable.vue` — slot-based cells, hover #faf8f4, uppercase 11px headers                               | Done   |
+| `src/components/BasePagination.vue` — page/perPage/total, prev/next, "Showing X–Y of Z"                                | Done   |
+| `src/components/BaseModal.vue` — Teleport to body, overlay, close button, fade transition                              | Done   |
+| `src/views/DashboardView.vue` — 4 stat cards from /api/analytics/overview, recent campaigns table, skeleton loading    | Done   |
+| `src/views/SubscribersView.vue` — search (300ms debounce), status tabs, add/import modals, export, pagination 50/page  | Done   |
+| `src/views/SubscriberDetailView.vue` — two-column layout, tags add/remove, list memberships, stats, unsubscribe/delete | Done   |
+| `src/router/index.js` — /subscribers and /subscribers/:id routes added                                                 | Done   |
+
+### Verification
+
+| Check                                       | Result                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `pnpm build`                                | Pass — 119 modules, 426ms, zero errors                                     |
+| `GET /api/analytics/overview`               | Returns total_subscribers, active, unsubscribed, bounced, open/click rates |
+| `GET /api/campaigns?per_page=5&status=sent` | Returns campaigns array with id/name/subject/status/sent_at                |
+| `GET /api/subscribers?page=1&per_page=50`   | Returns subscribers + total, tags embedded                                 |
+| `GET /api/subscribers/:id`                  | Returns subscriber + tags + lists                                          |
+| `GET /api/subscribers/:id/stats`            | Returns campaigns_received, total_opens, total_clicks                      |
+| `POST /api/subscribers/import` (CSV)        | Returns {imported, skipped, invalid}                                       |
+
+### Deviations from design spec
+
+- **Dashboard charts row** (sparkline + bar chart) not built — spec's "Layout per design section 3" only specified stat cards and recent campaigns table; charts were in the design mockup but not in the session task description
+- **Campaign open/click rates on dashboard** show "—" — the `/api/campaigns` list endpoint does not return per-campaign rates; the Stats endpoint is per-campaign and would require N+1 calls
+- **Tag colors** are hash-derived from tag name (cycling through 6 colors) — the Tag model has no `color` field in the DB schema
+- **Activity timeline** not built on subscriber detail — `/api/subscribers/:id/stats` returns aggregate counts, not per-event timeline data
+- **Confirm dialogs** use `window.confirm()` rather than a custom modal — sufficient for v1
+
+### API shape notes
+
+- `pgtype.UUID` marshals to standard 8-4-4-4-12 string format
+- Subscriber detail (`GET /api/subscribers/:id`) returns `tags` and `lists` arrays embedded
+- Subscriber stats returns `campaigns_received`, `total_opens`, `total_clicks` (plus raw arrays unused here)
+- Import result returns `{imported, skipped, invalid}`
+
+## Session 19 — Lists, Tags, Campaigns Screens (complete)
+
+### What was built
+
+| Item                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------- | ------ |
+| `src/composables/useConfirm.js` — `window.confirm` wrapper, upgradeable later                              | Done   |
+| `src/views/ListsView.vue` — 3-column card grid + full table + Create List modal                            | Done   |
+| `src/views/ListDetailView.vue` — stat row + paginated subscribers + embed code + delete                    | Done   |
+| `src/views/TagsView.vue` — full table + create/edit/delete modals                                          | Done   |
+| `src/views/CampaignsView.vue` — status tabs (All/Sent/Scheduled/Drafts) + table + counts                   | Done   |
+| `src/views/CampaignEditView.vue` — two-column layout, template pills, contentEditable editor, preview mode | Done   |
+| `src/views/CampaignStatsView.vue` — header card, 6-col stat grid, link breakdown table                     | Done   |
+| `src/router/index.js` — 7 new routes added (campaigns/new registered before campaigns/:id/edit)            | Done   |
+
+### Verification
+
+| Check                                           | Result                                                                                               |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `pnpm --dir frontend build`                     | Pass — 536ms, zero errors                                                                            |
+| `GET /api/lists`                                | `{lists: [{id, name, double_opt_in, subscriber_count, ...}]}`                                        |
+| `GET /api/tags`                                 | `{tags: []}` (none in test DB)                                                                       |
+| `GET /api/campaigns`                            | `{campaigns: [...], total, page, per_page}`                                                          |
+| `GET /api/campaigns/:id/stats`                  | `{sent, failed, opens, clicks, open_rate, click_rate, links: [{link_index, link_url, click_count}]}` |
+| Vite dev routes `/lists`, `/campaigns`, `/tags` | All serve index.html (SPA routing correct)                                                           |
+
+### API shape notes
+
+- `GET /api/lists` — `listResponse` extends `db.List` with `subscriber_count int64`; `double_opt_in` is a bool field
+- `GET /api/campaigns/:id/stats` — `links` array has `link_url` and `click_count` (not `count`); rates are `float64` ratios (e.g. 0.47 for 47%)
+- `POST /api/campaigns` — validation requires `name`, `subject`, `from_name`, `from_email` (must contain `@`), `send_to_type` ("list" or "tag")
+- `POST /api/campaigns/:id/schedule` — body: `{"scheduled_at": "RFC3339"}`, must be future time, campaign must be draft/scheduled
+- Campaign `send_to_id` is `pgtype.UUID` — marshals to UUID string or `null` when unset
+- Campaigns API does not return target list/tag name — resolved client-side by fetching lists+tags maps
+
+### Deviations from design spec
+
+- **Target name in campaigns table**: API doesn't include target name in campaign object; resolved by loading lists+tags maps on mount and looking up by `send_to_id`
+- **Bounces/Unsubscribes in stats grid**: per-campaign stats endpoint returns `sent/failed/opens/clicks/rates/links` only; bounces and unsubscribes default to 0 (shown but always 0 until API extends the response)
+- **Add subscriber to list modal**: spec says "subscriber search/email input" — implemented as email lookup against `GET /api/subscribers?q=email`, exact match required, shows subscriber name if found
+- **`send_to_id` null handling**: when no target is selected, `send_to_id` is `null` in JSON; frontend maps to empty string `''` and disables Send Now button
+
+## Session 20 — Analytics, Settings, Setup Wizard + Backend Wizard Middleware (complete)
+
+### What was built
+
+| Item                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------- | ------ |
+| `internal/handler/setup.go` — SetupHandler with 5 endpoints                                                | Done   |
+| `setupGuard` middleware in `cmd/server/main.go` — redirects to /setup if setup_complete = false            | Done   |
+| `POST /api/setup/owner` — CreateOwner (409 if already_setup)                                               | Done   |
+| `PUT /api/setup/settings` — UpdateSettings (409 if already_setup)                                          | Done   |
+| `PUT /api/setup/smtp` — UpdateSMTPSettings + hot-swap mailer (409 if already_setup)                        | Done   |
+| `POST /api/setup/test-smtp` — send test email to provided address (409 if already_setup)                   | Done   |
+| `POST /api/setup/complete` — SetSetupComplete + GenerateToken for auto-login (returns JWT)                 | Done   |
+| `src/views/AnalyticsView.vue` — period selector pills, 8 stat cards, campaign performance table            | Done   |
+| `src/views/SettingsView.vue` — sidebar layout (200px) + dynamic section component                          | Done   |
+| `src/views/settings/SettingsGeneralView.vue` — site info, sender defaults, compliance; GET+PUT wired       | Done   |
+| `src/views/settings/SettingsSMTPView.vue` — provider select, provider-specific fields, test + save         | Done   |
+| `src/views/settings/SettingsAPIKeyView.vue` — masked key, copy, regenerate with one-time reveal            | Done   |
+| `src/views/settings/SettingsSuppressionView.vue` — search, export, add modal, paginated table, remove      | Done   |
+| `src/views/SetupWizardView.vue` — 5-step wizard, step progress bar, all API calls wired                    | Done   |
+| `src/stores/auth.js` — `setToken` method added for wizard auto-login                                       | Done   |
+| `src/router/index.js` — analytics + settings routes added; /setup redirects to /dashboard if authenticated | Done   |
+
+### Backend setup endpoints
+
+All 5 endpoints are mounted outside the `RequireAuth` group (no auth required during setup):
+
+```
+POST /api/setup/owner     — CreateOwner (password min 8 chars, email @ required)
+PUT  /api/setup/settings  — UpdateSettings (general fields only)
+PUT  /api/setup/smtp      — UpdateSMTPSettings + mailerStore.Set()
+POST /api/setup/test-smtp — Send test email to {to} address
+POST /api/setup/complete  — SetSetupComplete → GetOwner → GenerateToken → {token}
+```
+
+Each endpoint returns 409 `{error:"already_setup"}` if `settings.setup_complete = true`.
+
+### setupGuard middleware
+
+Runs on all routes. Skips:
+
+- `/api/*`, `/setup*`, `/track/*`, `/unsubscribe`, `/confirm`, `/webhooks/*`, `/embed/*`, `/health`
+
+All other paths redirect to `/setup` (302) if `settings.setup_complete = false`.
+
+### Verification checklist
+
+| Check                       | Result                    |
+| --------------------------- | ------------------------- |
+| `go build ./...`            | Pass — compiles clean     |
+| `pnpm --dir frontend build` | Pass — 438ms, zero errors |
+
+### Deviations from spec
+
+- **Period selector is display-only**: `/api/analytics/overview` does not filter by period. Pills display correctly with "All time" selected but switching periods does not refetch. A note is displayed adjacent to the pills.
+- **Campaign sent_count from list response**: `GET /api/campaigns?status=sent` does not return `sent_count` per campaign (it's only in `send_jobs`). The `sent_count` column shows `—` for campaigns that have not been sent via the worker (it falls back from `stats` endpoint which is per-campaign). Opted not to do N+1 calls per spec instruction; shows `—` with graceful fallback to 0 when available.
+- **SMTP test in wizard step 4** saves SMTP credentials before sending test (PUT /api/setup/smtp is called as part of the Test Connection button). Continue is enabled after successful test.
+- **`/setup` redirect when authenticated**: Vue router guard redirects `/setup` → `/dashboard` when user is already logged in. Backend `setupGuard` only redirects non-API/non-setup routes, so the SPA route guard handles the "already logged in" case cleanly.
+- **`contains` helper removed**: used `strings.Contains` directly in setup handler.
+
+---
+
+## Session 21 — Signup Form Embed + Docker Packaging + README (complete)
+
+### What was built
+
+| Item                                                                         | Status |
+| ---------------------------------------------------------------------------- | ------ |
+| `internal/handler/embed.go` — EmbedHandler with ServeJS + Subscribe          | Done   |
+| `GET /embed/{listID}.js` — public, returns self-contained JS embed form      | Done   |
+| `POST /api/public/subscribe` — public subscribe endpoint with rate limiting  | Done   |
+| In-memory rate limiter — max 5 req/min per IP (sync.Mutex + timestamp map)   | Done   |
+| `docker-compose.yml` — rewritten for production with app + db services       | Done   |
+| `Dockerfile` — multi-stage build (Go 1.26 builder → alpine runtime)          | Done   |
+| `.env.example` — documents required and optional env vars                    | Done   |
+| `install.sh` — one-line install script                                       | Done   |
+| `README.md` — project overview, quick start, SMTP table, update instructions | Done   |
+| `Taskfile.yml` — `docker-build` and `docker-run` tasks added                 | Done   |
+
+### Route registration
+
+Both routes are public (outside RequireAuth, outside setupGuard):
+
+```
+GET  /embed/{listID}.js      — EmbedHandler.ServeJS
+POST /api/public/subscribe   — EmbedHandler.Subscribe
+```
+
+### Subscribe logic
+
+1. Rate check (5 req/min/IP)
+2. Validate email contains `@`
+3. Parse list_id as UUID — 400 if invalid
+4. GetListByID — 400 if not found
+5. IsSuppressed — if suppressed: 200 `{"message":"already_subscribed"}`
+6. GetSubscriberByEmail — if exists and active: 200 `{"message":"already_subscribed"}`
+7. If not exists: CreateSubscriber (status=active or pending based on double_opt_in, source="form")
+8. If double_opt_in: SendConfirmation → AddSubscriberToList → 200 `{"message":"check_email"}`
+9. Otherwise: AddSubscriberToList → 200 `{"message":"subscribed"}`
+
+### Docker
+
+- Production uses **Postgres 16-alpine** (not 18 which is dev-only)
+- Dockerfile uses `CI=true pnpm install` to avoid interactive TTY prompt in non-TTY build context
+- `docker-compose.yml` now includes `app` service (builds from Dockerfile) and `db` service with healthcheck
+
+### Verification
+
+| Check                                                      | Result                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| `go build ./...`                                           | Pass — compiles clean                                |
+| `pnpm --dir frontend build`                                | Pass — 465ms, zero errors                            |
+| `GET /embed/<list_id>.js`                                  | Returns JS with Content-Type: application/javascript |
+| `GET /embed/00000000-0000-0000-0000-000000000000.js`       | Returns `// OwnMaily: list not found`                |
+| `POST /api/public/subscribe` (new user, no double opt-in)  | 200 `{"message":"subscribed"}`                       |
+| `POST /api/public/subscribe` (duplicate active subscriber) | 200 `{"message":"already_subscribed"}`               |
+| `POST /api/public/subscribe` (double opt-in list)          | 200 `{"message":"check_email"}`                      |
+| `docker build -t ownmaily/ownmaily:latest .`               | Pass — multi-stage build succeeds                    |
+
+### Deviations from spec
+
+- **`show_first_name` not in List model**: spec references `list.show_first_name` but the field doesn't exist in the DB schema. Always includes the first_name field (spec says "default true for v1").
+- **`CI=true` added to pnpm install**: required to prevent pnpm from aborting in non-TTY Docker build context. Not in spec but necessary for build to succeed.
+
+---
+
+## Session 22 -- Astro Marketing Site + Stripe Payment (complete)
+
+This session built the standalone `ownmaily-landing` Astro project. It is separate from the main OwnMaily Go/Vue repo and will be deployed independently.
+
+### What was built
+
+| Item                                                                                                                 | Status |
+| -------------------------------------------------------------------------------------------------------------------- | ------ |
+| `astro.config.mjs` -- server output, `@tailwindcss/vite` plugin, `@astrojs/node` adapter                             | Done   |
+| `src/styles/global.css` -- CSS custom properties design system, `@import "tailwindcss"`                              | Done   |
+| `src/layouts/Layout.astro` -- base HTML shell, DM Sans from Google Fonts, meta tags                                  | Done   |
+| `src/pages/index.astro` -- full marketing page: nav, hero, features, how it works, comparison table, pricing, footer | Done   |
+| `src/pages/buy.astro` -- two-column buy page, feature list, Stripe checkout form                                     | Done   |
+| `src/pages/success.astro` -- post-payment thank you page, quick start steps, GitHub links                            | Done   |
+| `src/pages/api/checkout.ts` -- creates Stripe checkout session, redirects to hosted checkout                         | Done   |
+| `src/pages/api/webhook.ts` -- verifies Stripe signature, sends thank you email via Resend fetch                      | Done   |
+| `.env.example` -- all required environment variables documented                                                      | Done   |
+
+### Design system
+
+- Background: `#0a0a0c`
+- Accent: `#10b981` (emerald)
+- Font: DM Sans (300/400/500/600/700) from Google Fonts
+- Surface: `#111116` with `rgba(255,255,255,0.07)` borders
+- Accent glow on pricing card and logo dot
+
+### Verification
+
+| Check                          | Result                                   |
+| ------------------------------ | ---------------------------------------- |
+| `pnpm dev` -- `/` loads        | 200 Pass                                 |
+| `pnpm dev` -- `/buy` loads     | 200 Pass                                 |
+| `pnpm dev` -- `/success` loads | 200 Pass                                 |
+| `pnpm build`                   | Pass -- no errors, server built in 2.67s |
+
+### Deviations from spec
+
+- **`@astrojs/tailwind` replaced with `@tailwindcss/vite`**: `@astrojs/tailwind` v6.0.2 throws a PostCSS error with Tailwind v4 ("PostCSS plugin has moved to a separate package"). Switched to `@tailwindcss/vite` which is the correct Tailwind v4 integration for Astro. Functionally identical.
+- **`@astrojs/node` adapter added**: `output: 'server'` requires an adapter for `pnpm build` to succeed. Added `@astrojs/node` in standalone mode. Not in the original spec but required.
+- **GitHub URL**: `https://github.com/AbMani46/ownmaily` (user corrected during session).
+- **SUPPORT_EMAIL**: `support@soliduptime.org` (user corrected during session; spec placeholder was `jsmabaho@gmail.com`).
+- **Price shown as $49**: OWNMAILY_CONTEXT.MD lists $99, but the session spec explicitly sets $49 for this landing page. Used $49 throughout.
+
+### Going live checklist
+
+1. Create product + price in Stripe dashboard, copy price ID to `.env`
+2. Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `SUPPORT_EMAIL` in `.env`
+3. Register webhook endpoint in Stripe pointing to `https://ownmaily.com/api/webhook`
+4. Use `stripe listen --forward-to localhost:PORT/api/webhook` for local testing
+5. Deploy with `node dist/server/entry.mjs` or behind a reverse proxy

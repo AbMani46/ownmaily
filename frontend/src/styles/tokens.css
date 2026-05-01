@@ -1,0 +1,26 @@
+:root {
+  --accent:         #10b981;
+  --accent-hover:   #059669;
+  --accent-light:   #f0fdf9;
+
+  --bg-page:        #f4f3ef;
+  --bg-card:        #ffffff;
+  --bg-sidebar:     #0a0a0c;
+
+  --border:         #e8e5de;
+  --border-subtle:  #f0ede6;
+  --border-dark:    #1a1a22;
+
+  --text-primary:   #111110;
+  --text-secondary: #555555;
+  --text-muted:     #888888;
+  --text-inverse:   #ffffff;
+
+  --radius-card:    10px;
+  --radius-btn:     7px;
+  --radius-input:   7px;
+  --radius-badge:   20px;
+
+  --sidebar-width:  216px;
+  --topbar-height:  52px;
+}

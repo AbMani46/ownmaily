@@ -1,20 +1,35 @@
 services:
-  db:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ownmaily
-      POSTGRES_USER: ownmaily
-      POSTGRES_PASSWORD: ownmaily
+  app:
+    image: ownmaily/ownmaily:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "5433:5432"
+      - "${PORT:-4400}:4400"
+    environment:
+      - DB_URL=postgres://ownmaily:${POSTGRES_PASSWORD:-ownmaily}@db:5432/ownmaily?sslmode=disable
+      - APP_SECRET=${APP_SECRET}
+      - INSTALLATION_URL=${INSTALLATION_URL}
+      - PORT=4400
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ownmaily
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ownmaily}
+      POSTGRES_DB: ownmaily
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ownmaily -d ownmaily"]
+      test: ["CMD-SHELL", "pg_isready -U ownmaily"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:

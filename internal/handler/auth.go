@@ -80,6 +80,17 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	// API key auth: no JWT claims, but owner row is the same single owner.
+	if r.Context().Value(middleware.APIKeyAuthed) == true {
+		owner, err := h.queries.GetOwner(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"email": owner.Email})
+		return
+	}
+
 	claims, ok := r.Context().Value(middleware.ClaimsKey).(*auth.Claims)
 	if !ok || claims == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "missing claims")

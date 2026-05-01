@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,11 +55,13 @@ func main() {
 	go sendWorker.Start(ctx)
 	go schedulerWorker.Start(ctx)
 
+	setupHandler := handler.NewSetupHandler(queries, cfg.AppSecret, mailerStore)
 	webhookHandler := handler.NewWebhookHandler(queries)
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
 	subscriberHandler := handler.NewSubscriberHandler(queries)
 	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
 	listHandler := handler.NewListHandler(queries, confirmMailer)
+	embedHandler := handler.NewEmbedHandler(queries, cfg.InstallationURL, confirmMailer)
 	tagHandler := handler.NewTagHandler(queries)
 	campaignHandler := handler.NewCampaignHandler(queries, cfg.InstallationURL, cfg.AppSecret, sendWorker)
 	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
@@ -65,11 +69,19 @@ func main() {
 	settingsHandler := handler.NewSettingsHandler(queries, mailerStore)
 
 	r := chi.NewRouter()
+	r.Use(setupGuard(queries))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	// Setup API — no auth required, guarded internally by setup_complete flag
+	r.Post("/api/setup/owner", setupHandler.CreateOwner)
+	r.Put("/api/setup/settings", setupHandler.UpdateSettings)
+	r.Put("/api/setup/smtp", setupHandler.UpdateSMTP)
+	r.Post("/api/setup/test-smtp", setupHandler.TestSMTP)
+	r.Post("/api/setup/complete", setupHandler.Complete)
 
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/logout", authHandler.Logout)
@@ -82,6 +94,9 @@ func main() {
 	r.Post("/webhooks/resend", webhookHandler.Resend)
 	r.Post("/webhooks/mailgun", webhookHandler.Mailgun)
 	r.Post("/webhooks/ses", webhookHandler.SES)
+
+	r.Get("/embed/{listID}.js", embedHandler.ServeJS)
+	r.Post("/api/public/subscribe", embedHandler.Subscribe)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
@@ -142,7 +157,16 @@ func main() {
 		r.Delete("/api/settings/suppressions/{email}", settingsHandler.DeleteSuppression)
 	})
 
-	r.Handle("/*", http.FileServer(http.Dir("frontend")))
+	// Serve Vue build with SPA fallback — must be mounted after all /api/* routes.
+	distFS := os.DirFS("frontend/dist")
+	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if _, err := fs.Stat(distFS, path); err == nil {
+			http.FileServer(http.Dir("frontend/dist")).ServeHTTP(w, r)
+			return
+		}
+		http.ServeFile(w, r, "frontend/dist/index.html")
+	})
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
 
@@ -160,6 +184,33 @@ func main() {
 	log.Printf("OwnMaily started on :%s", cfg.Port)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+// setupGuard redirects to /setup if setup is not complete.
+// Skips API routes, setup routes, public tracking/webhook routes, and health.
+func setupGuard(queries *db2.Queries) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			if strings.HasPrefix(path, "/api/") ||
+				strings.HasPrefix(path, "/setup") ||
+				strings.HasPrefix(path, "/track/") ||
+				strings.HasPrefix(path, "/unsubscribe") ||
+				strings.HasPrefix(path, "/confirm") ||
+				strings.HasPrefix(path, "/webhooks/") ||
+				strings.HasPrefix(path, "/embed/") ||
+				path == "/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			settings, err := queries.GetSettings(r.Context())
+			if err != nil || !settings.SetupComplete {
+				http.Redirect(w, r, "/setup", http.StatusFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
