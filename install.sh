@@ -165,6 +165,7 @@ done
 
 # ─── Generate secrets ──────────────────────────────────────────────────────────
 APP_SECRET=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
 
 # ─── Create install directory ──────────────────────────────────────────────────
 INSTALL_DIR="$HOME/ownmaily"
@@ -186,7 +187,7 @@ cat > .env <<EOF
 APP_SECRET=${APP_SECRET}
 INSTALLATION_URL=${INSTALLATION_URL}
 PORT=4400
-POSTGRES_PASSWORD=ownmaily
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 EOF
 chmod 600 .env
 info "Created .env"

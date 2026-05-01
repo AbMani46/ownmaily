@@ -155,3 +155,47 @@ Rewrote `install.sh` as a full production-quality interactive installer using wh
 - whiptail I/O redirection: `3>&1 1>&2 2>&3` captures inputbox value to variable; each call guarded with `|| die "Installation cancelled."` so ESC/Cancel exits cleanly under `set -e`
 - Health check distinguishes "ready" vs "started but timed out" — shows appropriate whiptail screen and stdout message in both cases
 - `setup_credentials.txt` is `chmod 600` with a prominent reminder to delete after wizard completion
+
+---
+
+## Session: Secret Audit + .gitignore Fix
+**Date:** 2026-04-30
+**Status:** Complete
+
+### What was done
+
+Full codebase audit for hardcoded secrets. Three files scanned: all `.go`, `.vue`, `.js`, `.sh`, `.yml`, `.sql`, config files.
+
+---
+
+#### Findings
+
+| File | Finding | Verdict |
+|------|---------|---------|
+| `install.sh:189` | `POSTGRES_PASSWORD=ownmaily` hardcoded into production `.env` | **Fixed** |
+| `docker-compose.yml:10,23` | `${POSTGRES_PASSWORD:-ownmaily}` fallback exposes known weak default | **Fixed** |
+| `internal/testutil/fixtures.go:22` | `testpass123` hardcoded as test owner password | Acceptable — test-only package, never shipped |
+| `internal/testutil/server.go:18` | `TestAppSecret = "test-secret-do-not-use"` | Acceptable — test-only package |
+| `internal/testutil/db.go:17` | `postgres://ownmaily:ownmaily@localhost:5433/...` hardcoded fallback | Acceptable — test code, overridden by `TEST_DB_URL` env var |
+| `internal/config/config.go` | No hardcoded secrets — reads `APP_SECRET`, `DB_URL` from env, errors if missing | Clean |
+| `.env` | `APP_SECRET=change-me-before-production` | Git-ignored — not committed |
+| `.env.example` | Placeholder values only | Clean |
+
+No hardcoded API keys, tokens, real email addresses, or JWT secrets found outside `.env` (which is git-ignored).
+
+---
+
+#### Fixes Applied
+
+**`install.sh`** — generated `POSTGRES_PASSWORD` alongside `APP_SECRET`:
+- Added `POSTGRES_PASSWORD=$(openssl rand -hex 16)` in the "Generate secrets" block
+- Changed `.env` write from `POSTGRES_PASSWORD=ownmaily` → `POSTGRES_PASSWORD=${POSTGRES_PASSWORD}`
+
+**`docker-compose.yml`** — removed `:-ownmaily` weak fallback defaults:
+- `DB_URL` line: `${POSTGRES_PASSWORD:-ownmaily}` → `${POSTGRES_PASSWORD}`
+- `POSTGRES_PASSWORD` env: `${POSTGRES_PASSWORD:-ownmaily}` → `${POSTGRES_PASSWORD}`
+- Result: compose now fails clearly if no `.env` is present rather than silently using a known credential
+
+**`.gitignore`** — added exception to track `.env.example`:
+- Changed `**/.env*` → two lines: `**/.env*` + `!.env.example`
+- Verified: `.env` remains ignored; `.env.example` is now untracked (visible to git)
