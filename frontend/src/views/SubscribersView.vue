@@ -40,7 +40,18 @@
         </button>
       </div>
 
+      <!-- Skeleton rows while loading -->
+      <div v-if="loading" class="sk-table">
+        <div v-for="n in 8" :key="n" class="sk-row">
+          <div class="sk sk-text-wide" />
+          <div class="sk sk-badge" />
+          <div class="sk sk-tags" />
+          <div class="sk sk-text" />
+        </div>
+      </div>
+
       <BaseTable
+        v-else
         :columns="cols"
         :rows="subscribers"
         @row-click="row => $router.push('/subscribers/' + row.id)"
@@ -229,11 +240,9 @@ async function fetchSubscribers() {
   loading.value = true
   try {
     const params = { page: page.value, per_page: PER_PAGE }
-    if (search.value.trim()) {
-      params.q = search.value.trim()
-    } else if (activeTab.value !== 'all') {
-      params.status = activeTab.value
-    }
+    // Search and status filter are applied together — search respects the active tab
+    if (search.value.trim()) params.q = search.value.trim()
+    if (activeTab.value !== 'all') params.status = activeTab.value
     const res = await api.get('/api/subscribers', { params })
     subscribers.value = res.data.subscribers ?? []
     total.value = res.data.total ?? 0
@@ -530,6 +539,37 @@ onMounted(() => {
 
 .muted {
   color: var(--text-muted);
+}
+
+/* Loading skeleton */
+.sk-table {
+  padding: 4px 14px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 14px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sk {
+  background: #e8e5de;
+  border-radius: 4px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.sk-text { height: 12px; width: 70px; }
+.sk-text-wide { height: 12px; width: 180px; }
+.sk-badge { height: 20px; width: 60px; border-radius: 20px; }
+.sk-tags { height: 20px; width: 120px; border-radius: 20px; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 /* Form */

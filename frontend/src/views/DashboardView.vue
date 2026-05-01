@@ -66,10 +66,12 @@
             <span class="muted">{{ formatDate(value) }}</span>
           </template>
           <template #cell-open_rate="{ value }">
-            <span class="rate-dash">—</span>
+            <span v-if="value != null" class="rate-value">{{ (value * 100).toFixed(1) }}%</span>
+            <span v-else class="rate-dash">—</span>
           </template>
           <template #cell-click_rate="{ value }">
-            <span class="rate-dash">—</span>
+            <span v-if="value != null" class="rate-value">{{ (value * 100).toFixed(1) }}%</span>
+            <span v-else class="rate-dash">—</span>
           </template>
           <template #empty>
             <div class="empty-state">
@@ -192,6 +194,11 @@ onMounted(async () => {
 
 .rate-dash {
   color: #ccc;
+}
+
+.rate-value {
+  font-weight: 600;
+  color: #059669;
 }
 
 .empty-state {

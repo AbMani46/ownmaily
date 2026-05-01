@@ -8,9 +8,9 @@
         :key="t.id"
         class="template-pill"
         :class="{ active: selectedTemplate === t.id }"
-        @click="applyTemplate(t.id)"
+        @click="confirmApplyTemplate(t.id)"
       >
-        {{ t.icon }} {{ t.label }}
+        {{ t.label }}
       </button>
     </div>
 
@@ -98,22 +98,22 @@
       <div class="editor-panel">
         <!-- Toolbar -->
         <div class="toolbar">
-          <button class="tb-btn" title="Bold" @click="execCmd('bold')"><strong>B</strong></button>
-          <button class="tb-btn tb-italic" title="Italic" @click="execCmd('italic')"><em>I</em></button>
-          <button class="tb-btn tb-underline" title="Underline" @click="execCmd('underline')"><u>U</u></button>
+          <button class="tb-btn" title="Bold" @mousedown.prevent @click="execCmd('bold')"><strong>B</strong></button>
+          <button class="tb-btn tb-italic" title="Italic" @mousedown.prevent @click="execCmd('italic')"><em>I</em></button>
+          <button class="tb-btn tb-underline" title="Underline" @mousedown.prevent @click="execCmd('underline')"><u>U</u></button>
 
           <div class="toolbar-sep" />
 
-          <button class="tb-pill" @click="execCmd('formatBlock', 'h1')">H1</button>
-          <button class="tb-pill" @click="execCmd('formatBlock', 'h2')">H2</button>
-          <button class="tb-pill" @click="execCmd('formatBlock', 'h3')">H3</button>
+          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h1')">H1</button>
+          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h2')">H2</button>
+          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h3')">H3</button>
 
           <div class="toolbar-sep" />
 
-          <button class="tb-btn" title="Link" @click="insertLink">
+          <button class="tb-btn" title="Link" @mousedown.prevent @click="openLinkModal">
             <Link2 :size="13" color="#555" />
           </button>
-          <button class="tb-btn" title="Unordered list" @click="execCmd('insertUnorderedList')">
+          <button class="tb-btn" title="Unordered list" @mousedown.prevent @click="execCmd('insertUnorderedList')">
             <List :size="13" color="#555" />
           </button>
 
@@ -133,6 +133,7 @@
             ref="editorRef"
             class="editor-area"
             contenteditable="true"
+            data-placeholder="Start writing your email…"
           />
           <!-- Preview mode -->
           <div v-show="previewMode" class="preview-wrap">
@@ -150,7 +151,12 @@
           <p v-if="saveError" class="save-error">{{ saveError }}</p>
           <div class="action-buttons">
             <BaseButton variant="secondary" @click="saveDraft" :loading="saveLoading">
-              Save Draft
+              <template v-if="saveSuccess">
+                <span class="saved-indicator">✓ Saved</span>
+              </template>
+              <template v-else>
+                Save Draft
+              </template>
             </BaseButton>
             <BaseButton variant="secondary" @click="openSchedule" :disabled="!campaignId && saveLoading">
               <CalendarDays :size="13" :stroke-width="2" />
@@ -164,6 +170,33 @@
         </div>
       </div>
     </div>
+
+    <!-- Insert Link Modal -->
+    <BaseModal :show="showLinkModal" title="Insert Link" @close="closeLinkModal">
+      <form @submit.prevent="submitLink" class="form">
+        <div class="form-field">
+          <label class="field-label">URL</label>
+          <BaseInput v-model="linkUrl" ref="linkInputRef" placeholder="https://example.com" type="url" />
+        </div>
+        <div class="form-actions">
+          <BaseButton variant="ghost" type="button" @click="closeLinkModal">Cancel</BaseButton>
+          <BaseButton variant="primary" type="submit">Insert Link</BaseButton>
+        </div>
+      </form>
+    </BaseModal>
+
+    <!-- Template Overwrite Confirmation Modal -->
+    <BaseModal :show="showTemplateConfirm" title="Replace editor content?" @close="showTemplateConfirm = false">
+      <div class="send-confirm">
+        <p class="confirm-text">
+          Applying the <strong>{{ pendingTemplateLabel }}</strong> template will replace your current content. This cannot be undone.
+        </p>
+        <div class="form-actions">
+          <BaseButton variant="ghost" @click="showTemplateConfirm = false">Cancel</BaseButton>
+          <BaseButton variant="primary" @click="applyPendingTemplate">Apply Template</BaseButton>
+        </div>
+      </div>
+    </BaseModal>
 
     <!-- Schedule Modal -->
     <BaseModal :show="showSchedule" title="Schedule Campaign" @close="showSchedule = false">
@@ -243,6 +276,7 @@ const selectedTemplate = ref('blank')
 
 const saveLoading = ref(false)
 const saveError = ref('')
+const saveSuccess = ref(false)
 
 const showSchedule = ref(false)
 const scheduleLoading = ref(false)
@@ -253,11 +287,23 @@ const showSendConfirm = ref(false)
 const sendLoading = ref(false)
 const sendError = ref('')
 
+const showLinkModal = ref(false)
+const linkUrl = ref('')
+let savedSelection = null
+
+const showTemplateConfirm = ref(false)
+const pendingTemplate = ref(null)
+
 const templates = [
-  { id: 'blank', label: 'Blank', icon: '□' },
-  { id: 'newsletter', label: 'Newsletter', icon: '▦' },
-  { id: 'announcement', label: 'Announcement', icon: '◉' },
+  { id: 'blank', label: 'Blank' },
+  { id: 'newsletter', label: 'Newsletter' },
+  { id: 'announcement', label: 'Announcement' },
 ]
+
+const pendingTemplateLabel = computed(() => {
+  const t = templates.find(t => t.id === pendingTemplate.value)
+  return t?.label ?? ''
+})
 
 const TEMPLATE_HTML = {
   blank: '<p></p>',
@@ -297,10 +343,53 @@ function execCmd(cmd, value = null) {
   syncEditorHTML()
 }
 
-function insertLink() {
-  const url = window.prompt('Enter URL:')
-  if (url) {
-    execCmd('createLink', url)
+function openLinkModal() {
+  // Save current selection so it survives the modal opening
+  const sel = window.getSelection()
+  savedSelection = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+  linkUrl.value = ''
+  showLinkModal.value = true
+}
+
+function closeLinkModal() {
+  showLinkModal.value = false
+  linkUrl.value = ''
+  savedSelection = null
+}
+
+function submitLink() {
+  const url = linkUrl.value.trim()
+  if (!url) { closeLinkModal(); return }
+  showLinkModal.value = false
+  // Restore selection before executing command
+  if (savedSelection) {
+    const sel = window.getSelection()
+    sel.removeAllRanges()
+    sel.addRange(savedSelection)
+  }
+  editorRef.value?.focus()
+  document.execCommand('createLink', false, url)
+  syncEditorHTML()
+  savedSelection = null
+  linkUrl.value = ''
+}
+
+function confirmApplyTemplate(id) {
+  const currentContent = editorRef.value?.innerHTML?.trim()
+  const isEmpty = !currentContent || currentContent === '<p></p>' || currentContent === ''
+  if (!isEmpty && id !== selectedTemplate.value) {
+    pendingTemplate.value = id
+    showTemplateConfirm.value = true
+  } else {
+    applyTemplate(id)
+  }
+}
+
+function applyPendingTemplate() {
+  showTemplateConfirm.value = false
+  if (pendingTemplate.value) {
+    applyTemplate(pendingTemplate.value)
+    pendingTemplate.value = null
   }
 }
 
@@ -371,6 +460,7 @@ async function loadCampaign() {
 
 async function saveDraft() {
   saveError.value = ''
+  saveSuccess.value = false
   if (editorRef.value) syncEditorHTML()
 
   const payload = {
@@ -394,6 +484,8 @@ async function saveDraft() {
       campaignId.value = res.data.id?.String || res.data.id
       router.replace(`/campaigns/${campaignId.value}/edit`)
     }
+    saveSuccess.value = true
+    setTimeout(() => { saveSuccess.value = false }, 2500)
   } catch (e) {
     const msg = e.response?.data?.message || 'Failed to save draft.'
     saveError.value = msg
@@ -417,7 +509,6 @@ async function submitSchedule() {
 
   scheduleLoading.value = true
   try {
-    // Ensure campaign is saved first
     if (!campaignId.value) {
       await saveDraft()
       if (!campaignId.value) {
@@ -446,7 +537,6 @@ async function submitSend() {
   sendError.value = ''
   sendLoading.value = true
   try {
-    // Save first if needed
     if (!campaignId.value) {
       await saveDraft()
       if (!campaignId.value) {
@@ -752,6 +842,14 @@ onMounted(async () => {
   outline: none;
 }
 
+/* Placeholder shown when editor is empty */
+.editor-area:empty:before {
+  content: attr(data-placeholder);
+  color: #bbb;
+  pointer-events: none;
+  display: block;
+}
+
 .preview-wrap {
   padding: 24px;
 }
@@ -813,6 +911,12 @@ onMounted(async () => {
 .action-buttons {
   display: flex;
   gap: 8px;
+}
+
+.saved-indicator {
+  color: #059669;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 /* Modals */

@@ -49,7 +49,7 @@
         </button>
       </form>
 
-      <div class="card-footer">
+      <div v-if="showSetupLink" class="card-footer">
         <RouterLink to="/setup" class="setup-link">Run setup wizard →</RouterLink>
       </div>
     </div>
@@ -57,10 +57,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Mail, Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import api from '@/lib/api'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -70,6 +71,8 @@ const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
 const error = ref('')
+// Default to showing the link; hide it once we confirm setup is complete
+const showSetupLink = ref(true)
 
 async function handleSubmit() {
   error.value = ''
@@ -83,6 +86,15 @@ async function handleSubmit() {
     loading.value = false
   }
 }
+
+onMounted(async () => {
+  try {
+    const res = await api.get('/api/setup/status')
+    showSetupLink.value = !res.data.complete
+  } catch {
+    // If the endpoint doesn't exist or errors, keep the link visible
+  }
+})
 </script>
 
 <style scoped>

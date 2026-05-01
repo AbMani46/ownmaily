@@ -77,6 +77,7 @@ func main() {
 	})
 
 	// Setup API — no auth required, guarded internally by setup_complete flag
+	r.Get("/api/setup/status", setupHandler.Status)
 	r.Post("/api/setup/owner", setupHandler.CreateOwner)
 	r.Put("/api/setup/settings", setupHandler.UpdateSettings)
 	r.Put("/api/setup/smtp", setupHandler.UpdateSMTP)

@@ -165,15 +165,20 @@
           <button class="btn-ghost" @click="goBack">
             {{ currentStep === 0 ? 'Back to login' : '← Previous' }}
           </button>
-          <button
-            class="btn-primary"
-            :disabled="nextDisabled || stepLoading"
-            @click="goNext"
-          >
-            <span v-if="stepLoading" class="loading-dots">…</span>
-            <span v-else-if="currentStep === steps.length - 1">Finish Setup</span>
-            <span v-else>Continue →</span>
-          </button>
+          <div class="footer-right">
+            <span v-if="currentStep === 3 && !smtpTested" class="continue-hint">
+              Test the connection above to continue
+            </span>
+            <button
+              class="btn-primary"
+              :disabled="nextDisabled || stepLoading"
+              @click="goNext"
+            >
+              <span v-if="stepLoading" class="loading-dots">…</span>
+              <span v-else-if="currentStep === steps.length - 1">Finish Setup</span>
+              <span v-else>Continue →</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -246,17 +251,22 @@ export default {
     }
 
     async function testSmtp() {
-      testingSmtp.value = true
       smtpTestResult.value = ''
       smtpTested.value = false
       stepError.value = ''
+
+      if (!owner.value.email) {
+        smtpTestResult.value = 'Owner email not set — go back to step 2 and enter your email address before testing.'
+        return
+      }
+
+      testingSmtp.value = true
       try {
-        // Save SMTP first
+        // Save SMTP first, then send a test to the owner's email
         await api.put('/api/setup/smtp', { provider: smtp.value.provider, credentials: buildSmtpCredentials() })
-        // Then send test to owner email
-        await api.post('/api/setup/test-smtp', { to: owner.value.email || general.value.installation_url })
+        await api.post('/api/setup/test-smtp', { to: owner.value.email })
         smtpTested.value = true
-        smtpTestResult.value = 'Connection successful — test email sent!'
+        smtpTestResult.value = `Connection successful — test email sent to ${owner.value.email}!`
       } catch (e) {
         smtpTestResult.value = e.response?.data?.message || 'Connection failed. Check your credentials.'
       } finally {
@@ -667,6 +677,18 @@ export default {
 .btn-ghost:hover { border-color: var(--border); color: var(--text-primary); }
 
 .loading-dots { letter-spacing: 2px; }
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.continue-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
 
 .fade-enter-active, .fade-leave-active { transition: opacity 200ms; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

@@ -19,13 +19,21 @@
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from 'vue'
 import { X } from 'lucide-vue-next'
 
-defineProps({
+const props = defineProps({
   show: { type: Boolean, required: true },
   title: { type: String, default: '' },
 })
-defineEmits(['close'])
+const emit = defineEmits(['close'])
+
+function onKeydown(e) {
+  if (e.key === 'Escape' && props.show) emit('close')
+}
+
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>

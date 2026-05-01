@@ -51,6 +51,11 @@
         <template #cell-created_at="{ value }">
           <span class="muted">{{ formatDate(value) }}</span>
         </template>
+        <template #cell-_actions="{ row }">
+          <div class="actions-cell" @click.stop>
+            <BaseButton variant="ghost" @click="openEdit(row)">Edit</BaseButton>
+          </div>
+        </template>
         <template #empty>
           <div>No lists yet. Create your first list to get started.</div>
         </template>
@@ -69,21 +74,45 @@
           <BaseInput v-model="createForm.description" placeholder="Optional description" />
         </div>
         <div class="form-field">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              v-model="createForm.double_opt_in"
-              class="toggle-checkbox"
-            />
+          <div class="toggle-row">
+            <button
+              type="button"
+              class="toggle-switch"
+              :class="{ on: createForm.double_opt_in }"
+              @click="createForm.double_opt_in = !createForm.double_opt_in"
+              role="switch"
+              :aria-checked="createForm.double_opt_in"
+            >
+              <span class="toggle-thumb" />
+            </button>
             <span class="toggle-text">
               <strong>Double opt-in</strong> — subscribers confirm via email before being added
             </span>
-          </label>
+          </div>
         </div>
         <p v-if="createError" class="form-error">{{ createError }}</p>
         <div class="form-actions">
           <BaseButton variant="ghost" type="button" @click="closeCreate">Cancel</BaseButton>
           <BaseButton variant="primary" type="submit" :loading="createLoading">Create List</BaseButton>
+        </div>
+      </form>
+    </BaseModal>
+
+    <!-- Edit List Modal -->
+    <BaseModal :show="showEdit" title="Edit List" @close="closeEdit">
+      <form @submit.prevent="submitEdit" class="form">
+        <div class="form-field">
+          <label class="field-label">Name <span class="required">*</span></label>
+          <BaseInput v-model="editForm.name" placeholder="e.g. Weekly Newsletter" />
+        </div>
+        <div class="form-field">
+          <label class="field-label">Description</label>
+          <BaseInput v-model="editForm.description" placeholder="Optional description" />
+        </div>
+        <p v-if="editError" class="form-error">{{ editError }}</p>
+        <div class="form-actions">
+          <BaseButton variant="ghost" type="button" @click="closeEdit">Cancel</BaseButton>
+          <BaseButton variant="primary" type="submit" :loading="editLoading">Save Changes</BaseButton>
         </div>
       </form>
     </BaseModal>
@@ -109,11 +138,17 @@ const createLoading = ref(false)
 const createError = ref('')
 const createForm = ref({ name: '', description: '', double_opt_in: false })
 
+const showEdit = ref(false)
+const editLoading = ref(false)
+const editError = ref('')
+const editForm = ref({ id: '', name: '', description: '' })
+
 const cols = [
   { key: 'name', label: 'List Name' },
   { key: 'subscriber_count', label: 'Subscribers' },
   { key: 'double_opt_in', label: 'Opt-in Type' },
   { key: 'created_at', label: 'Created' },
+  { key: '_actions', label: '' },
 ]
 
 function formatDate(dateStr) {
@@ -165,6 +200,44 @@ async function submitCreate() {
     }
   } finally {
     createLoading.value = false
+  }
+}
+
+function openEdit(list) {
+  editForm.value = { id: list.id, name: list.name, description: list.description || '' }
+  editError.value = ''
+  showEdit.value = true
+}
+
+function closeEdit() {
+  showEdit.value = false
+  editForm.value = { id: '', name: '', description: '' }
+  editError.value = ''
+}
+
+async function submitEdit() {
+  editError.value = ''
+  if (!editForm.value.name.trim()) {
+    editError.value = 'Name is required.'
+    return
+  }
+  editLoading.value = true
+  try {
+    await api.put(`/api/lists/${editForm.value.id}`, {
+      name: editForm.value.name.trim(),
+      description: editForm.value.description.trim(),
+    })
+    closeEdit()
+    fetchLists()
+  } catch (e) {
+    const code = e.response?.data?.error
+    if (code === 'duplicate') {
+      editError.value = 'A list with that name already exists.'
+    } else {
+      editError.value = 'Something went wrong. Please try again.'
+    }
+  } finally {
+    editLoading.value = false
   }
 }
 
@@ -275,6 +348,11 @@ onMounted(fetchLists)
   color: var(--text-muted);
 }
 
+.actions-cell {
+  display: flex;
+  gap: 4px;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -298,20 +376,46 @@ onMounted(fetchLists)
   color: #dc2626;
 }
 
-.toggle-label {
+/* Styled toggle switch */
+.toggle-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  cursor: pointer;
 }
 
-.toggle-checkbox {
-  margin-top: 2px;
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
-  flex-shrink: 0;
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #d1d5db;
+  border: none;
   cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: background 150ms;
+  padding: 0;
+}
+
+.toggle-switch.on {
+  background: var(--accent);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 150ms;
+  display: block;
+}
+
+.toggle-switch.on .toggle-thumb {
+  transform: translateX(16px);
 }
 
 .toggle-text {
