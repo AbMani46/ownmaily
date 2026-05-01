@@ -27,7 +27,7 @@
             </div>
             <div class="info-tile">
               <div class="tile-key">Last Active</div>
-              <div class="tile-val">—</div>
+              <div class="tile-val">{{ formatDate(subscriber.last_active) }}</div>
             </div>
             <div class="info-tile">
               <div class="tile-key">Source</div>
@@ -42,7 +42,7 @@
 
         <!-- Tags card -->
         <BaseCard>
-          <div class="section-header">
+          <div class="section-header" ref="tagCardRef">
             <span class="section-title">Tags</span>
             <BaseButton variant="ghost" @click="showTagDropdown = !showTagDropdown">
               <Plus :size="11" :stroke-width="2.5" />
@@ -162,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, Plus, UserMinus, Trash2 } from 'lucide-vue-next'
 import api from '@/lib/api'
@@ -184,6 +184,13 @@ const stats = ref(null)
 const showTagDropdown = ref(false)
 const tagSearch = ref('')
 const availableTags = ref([])
+const tagCardRef = ref(null)
+
+function onDocumentClick(e) {
+  if (showTagDropdown.value && tagCardRef.value && !tagCardRef.value.contains(e.target)) {
+    showTagDropdown.value = false
+  }
+}
 
 const unsubLoading = ref(false)
 const deleteLoading = ref(false)
@@ -302,7 +309,14 @@ async function handleDelete() {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  fetchData()
+  document.addEventListener('click', onDocumentClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
 </script>
 
 <style scoped>

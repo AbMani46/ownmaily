@@ -208,6 +208,16 @@ func (h *SetupHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "test email sent to " + body.To})
 }
 
+// GET /api/setup/status — public endpoint, returns {"complete": true/false}
+func (h *SetupHandler) Status(w http.ResponseWriter, r *http.Request) {
+	s, err := h.db.GetSettings(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]bool{"complete": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"complete": s.SetupComplete})
+}
+
 // POST /api/setup/complete — mark setup done + auto-login (only if setup_complete = false)
 func (h *SetupHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	if h.guardSetupIncomplete(w, r) {

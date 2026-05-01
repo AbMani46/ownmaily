@@ -56,126 +56,118 @@
       </template>
     </div>
 
-    <!-- Add modal -->
-    <teleport to="body">
-      <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-        <div class="modal">
-          <h3>Add to suppression list</h3>
-          <div class="field">
-            <label>Email address</label>
-            <input v-model="addEmail" type="email" placeholder="bad@example.com" autofocus @keyup.enter="submitAdd" />
-          </div>
-          <div v-if="addError" class="error-msg">{{ addError }}</div>
-          <div class="modal-actions">
-            <button class="btn-primary" :disabled="addLoading" @click="submitAdd">
-              {{ addLoading ? 'Adding…' : 'Add email' }}
-            </button>
-            <button class="btn-ghost" @click="showAddModal = false">Cancel</button>
-          </div>
+    <!-- Add email modal — uses BaseModal for visual consistency -->
+    <BaseModal :show="showAddModal" title="Add to suppression list" @close="closeAddModal">
+      <div class="modal-form">
+        <div class="field">
+          <label>Email address</label>
+          <input v-model="addEmail" type="email" placeholder="bad@example.com" @keyup.enter="submitAdd" />
+        </div>
+        <div v-if="addError" class="error-msg">{{ addError }}</div>
+        <div class="modal-actions">
+          <button class="btn-ghost" @click="closeAddModal">Cancel</button>
+          <button class="btn-primary" :disabled="addLoading" @click="submitAdd">
+            {{ addLoading ? 'Adding…' : 'Add email' }}
+          </button>
         </div>
       </div>
-    </teleport>
+    </BaseModal>
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref, watch, onMounted } from 'vue'
 import api from '@/lib/api'
+import BaseModal from '@/components/BaseModal.vue'
 
-export default {
-  name: 'SettingsSuppressionView',
-  setup() {
-    const suppressions = ref([])
-    const loading = ref(true)
-    const searchInput = ref('')
-    const page = ref(1)
-    const perPage = 25
-    const total = ref(0)
-    const showAddModal = ref(false)
-    const addEmail = ref('')
-    const addLoading = ref(false)
-    const addError = ref('')
+const suppressions = ref([])
+const loading = ref(true)
+const searchInput = ref('')
+const page = ref(1)
+const perPage = 25
+const total = ref(0)
+const showAddModal = ref(false)
+const addEmail = ref('')
+const addLoading = ref(false)
+const addError = ref('')
 
-    let searchTimer = null
+let searchTimer = null
 
-    async function load() {
-      loading.value = true
-      try {
-        const params = { page: page.value, per_page: perPage }
-        if (searchInput.value) params.q = searchInput.value
-        const { data } = await api.get('/api/settings/suppressions', { params })
-        suppressions.value = data.suppressions || []
-        total.value = data.total || 0
-      } finally {
-        loading.value = false
-      }
-    }
+async function load() {
+  loading.value = true
+  try {
+    const params = { page: page.value, per_page: perPage }
+    if (searchInput.value) params.q = searchInput.value
+    const { data } = await api.get('/api/settings/suppressions', { params })
+    suppressions.value = data.suppressions || []
+    total.value = data.total || 0
+  } finally {
+    loading.value = false
+  }
+}
 
-    watch(searchInput, () => {
-      clearTimeout(searchTimer)
-      page.value = 1
-      searchTimer = setTimeout(load, 300)
-    })
+watch(searchInput, () => {
+  clearTimeout(searchTimer)
+  page.value = 1
+  searchTimer = setTimeout(load, 300)
+})
 
-    watch(page, load)
-    onMounted(load)
+watch(page, load)
+onMounted(load)
 
-    function formatDate(s) {
-      if (!s) return '—'
-      return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
+function formatDate(s) {
+  if (!s) return '—'
+  return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
-    function formatReason(r) {
-      const map = { hard_bounce: 'Hard bounce', complained: 'Spam complaint', unsubscribed: 'Unsubscribed', manual: 'Manually added' }
-      return map[r] || r
-    }
+function formatReason(r) {
+  const map = { hard_bounce: 'Hard bounce', complained: 'Spam complaint', unsubscribed: 'Unsubscribed', manual: 'Manually added' }
+  return map[r] || r
+}
 
-    function reasonClass(r) {
-      if (r === 'hard_bounce') return 'reason-bounce'
-      if (r === 'complained') return 'reason-spam'
-      if (r === 'unsubscribed') return 'reason-unsub'
-      return 'reason-manual'
-    }
+function reasonClass(r) {
+  if (r === 'hard_bounce') return 'reason-bounce'
+  if (r === 'complained') return 'reason-spam'
+  if (r === 'unsubscribed') return 'reason-unsub'
+  return 'reason-manual'
+}
 
-    async function removeEmail(email) {
-      if (!confirm(`Remove ${email} from suppression list?`)) return
-      try {
-        await api.delete('/api/settings/suppressions/' + encodeURIComponent(email))
-        await load()
-      } catch (e) {
-        alert(e.response?.data?.message || 'Remove failed')
-      }
-    }
+async function removeEmail(email) {
+  if (!confirm(`Remove ${email} from suppression list?`)) return
+  try {
+    await api.delete('/api/settings/suppressions/' + encodeURIComponent(email))
+    await load()
+  } catch (e) {
+    alert(e.response?.data?.message || 'Remove failed')
+  }
+}
 
-    function exportList() {
-      window.location.href = '/api/settings/suppressions/export'
-    }
+function exportList() {
+  window.location.href = '/api/settings/suppressions/export'
+}
 
-    async function submitAdd() {
-      if (!addEmail.value || !addEmail.value.includes('@')) {
-        addError.value = 'Enter a valid email address'
-        return
-      }
-      addLoading.value = true
-      addError.value = ''
-      try {
-        await api.post('/api/settings/suppressions', { email: addEmail.value })
-        addEmail.value = ''
-        showAddModal.value = false
-        await load()
-      } catch (e) {
-        addError.value = e.response?.data?.message || 'Add failed'
-      } finally {
-        addLoading.value = false
-      }
-    }
+function closeAddModal() {
+  showAddModal.value = false
+  addEmail.value = ''
+  addError.value = ''
+}
 
-    return {
-      suppressions, loading, searchInput, page, perPage, total,
-      showAddModal, addEmail, addLoading, addError,
-      formatDate, formatReason, reasonClass, removeEmail, exportList, submitAdd,
-    }
-  },
+async function submitAdd() {
+  if (!addEmail.value || !addEmail.value.includes('@')) {
+    addError.value = 'Enter a valid email address'
+    return
+  }
+  addLoading.value = true
+  addError.value = ''
+  try {
+    await api.post('/api/settings/suppressions', { email: addEmail.value })
+    closeAddModal()
+    await load()
+  } catch (e) {
+    addError.value = e.response?.data?.message || 'Add failed'
+  } finally {
+    addLoading.value = false
+  }
 }
 </script>
 
@@ -202,7 +194,8 @@ export default {
   border: none; border-radius: var(--radius-btn); font-size: 13px; font-weight: 600;
   font-family: inherit; cursor: pointer; white-space: nowrap; transition: background 120ms;
 }
-.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-secondary {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 14px; background: #fff; color: var(--text-secondary);
@@ -255,16 +248,9 @@ export default {
 }
 .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .page-info { color: var(--text-muted); font-size: 12px; }
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
-  display: flex; align-items: center; justify-content: center; z-index: 100;
-}
-.modal {
-  background: #fff; border-radius: 12px; padding: 28px;
-  width: 400px; box-shadow: 0 8px 40px rgba(0,0,0,0.18);
-  display: flex; flex-direction: column; gap: 16px;
-}
-.modal h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0; }
+
+/* Modal form content */
+.modal-form { display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 12px; font-weight: 600; color: #444; letter-spacing: 0.02em; }
 .field input {
@@ -273,7 +259,7 @@ export default {
 }
 .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(16,185,129,0.12); }
 .error-msg { font-size: 12px; color: #dc2626; }
-.modal-actions { display: flex; gap: 8px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .btn-ghost {
   padding: 8px 14px; background: transparent; color: var(--text-secondary);
   border: 1px solid var(--border); border-radius: var(--radius-btn);

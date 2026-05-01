@@ -69,7 +69,13 @@
           </div>
         </template>
         <template #empty>
-          <div>No campaigns yet. Create your first campaign.</div>
+          <div class="empty-campaigns">
+            <span>No campaigns yet.</span>
+            <BaseButton variant="primary" @click="$router.push('/campaigns/new')">
+              <Plus :size="13" :stroke-width="2" />
+              Create your first campaign
+            </BaseButton>
+          </div>
         </template>
       </BaseTable>
 
@@ -81,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import api from '@/lib/api'
@@ -112,14 +118,20 @@ const tabs = computed(() => [
   { id: 'draft', label: 'Drafts', count: counts.value.draft },
 ])
 
-const cols = [
+const dateColumnLabel = computed(() => {
+  if (activeTab.value === 'sent') return 'Sent'
+  if (activeTab.value === 'scheduled') return 'Scheduled For'
+  return 'Created'
+})
+
+const cols = computed(() => [
   { key: 'name', label: 'Campaign' },
   { key: 'status', label: 'Status' },
-  { key: '_date', label: 'Date' },
+  { key: '_date', label: dateColumnLabel.value },
   { key: '_open_rate', label: 'Open Rate' },
   { key: '_click_rate', label: 'Click Rate' },
   { key: '_actions', label: '' },
-]
+])
 
 function targetLabel(row) {
   if (!row.send_to_id) return '—'
@@ -214,7 +226,10 @@ async function fetchNameMaps() {
 }
 
 async function handleDelete(row) {
-  const yes = confirm(`Delete campaign "${row.name}"? This cannot be undone.`)
+  const scheduledNote = row.status === 'scheduled'
+    ? ' The scheduled send will be cancelled.'
+    : ''
+  const yes = confirm(`Delete campaign "${row.name}"?${scheduledNote} This cannot be undone.`)
   if (!yes) return
   try {
     await api.delete(`/api/campaigns/${row.id}`)
@@ -341,5 +356,14 @@ onMounted(() => {
 
 .pagination-wrap {
   padding: 0 14px 14px;
+}
+
+.empty-campaigns {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 </style>

@@ -1,17 +1,5 @@
 <template>
   <div class="analytics-page">
-    <!-- Period selector -->
-    <div class="period-row">
-      <button
-        v-for="p in periods"
-        :key="p.id"
-        class="period-pill"
-        :class="{ active: activePeriod === p.id }"
-        @click="activePeriod = p.id"
-      >{{ p.label }}</button>
-      <span class="period-note">Period filter is display-only — data shows all time</span>
-    </div>
-
     <!-- Row 1 stat cards -->
     <div v-if="loading" class="skeleton-grid">
       <div v-for="i in 8" :key="i" class="skeleton-card"></div>
@@ -95,8 +83,8 @@
                 <td class="campaign-name">{{ c.name }}</td>
                 <td class="muted">{{ formatDate(c.sent_at) }}</td>
                 <td class="num">{{ c.sent_count ? fmt(c.sent_count) : '—' }}</td>
-                <td class="rate-dash">—</td>
-                <td class="rate-dash">—</td>
+                <td class="num">{{ c.open_rate != null ? pct(c.open_rate) : '—' }}</td>
+                <td class="num">{{ c.click_rate != null ? pct(c.click_rate) : '—' }}</td>
               </tr>
             </tbody>
           </table>
@@ -106,77 +94,61 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/lib/api'
 import StatCard from '@/components/StatCard.vue'
 
-export default {
-  name: 'AnalyticsView',
-  components: { StatCard },
-  setup() {
-    const overview = ref({
-      total_subscribers: 0,
-      total_emails_sent: 0,
-      overall_open_rate: 0,
-      overall_click_rate: 0,
-      unsubscribed: 0,
-      bounced: 0,
-      active_subscribers: 0,
-    })
-    const campaigns = ref([])
-    const loading = ref(true)
-    const campaignsLoading = ref(true)
-    const activePeriod = ref('all')
+const overview = ref({
+  total_subscribers: 0,
+  total_emails_sent: 0,
+  overall_open_rate: 0,
+  overall_click_rate: 0,
+  unsubscribed: 0,
+  bounced: 0,
+  active_subscribers: 0,
+})
+const campaigns = ref([])
+const loading = ref(true)
+const campaignsLoading = ref(true)
 
-    const periods = [
-      { id: '7d', label: '7 days' },
-      { id: '30d', label: '30 days' },
-      { id: '90d', label: '90 days' },
-      { id: 'all', label: 'All time' },
-    ]
+const deliverability = computed(() => {
+  const sent = overview.value.total_emails_sent
+  const bounced = overview.value.bounced
+  if (!sent) return '—'
+  return (((sent - bounced) / sent) * 100).toFixed(1) + '%'
+})
 
-    const deliverability = computed(() => {
-      const sent = overview.value.total_emails_sent
-      const bounced = overview.value.bounced
-      if (!sent) return '—'
-      return (((sent - bounced) / sent) * 100).toFixed(1) + '%'
-    })
-
-    function fmt(n) {
-      if (n == null) return '0'
-      return Number(n).toLocaleString()
-    }
-
-    function pct(r) {
-      if (r == null) return '—'
-      return (Number(r) * 100).toFixed(1) + '%'
-    }
-
-    function formatDate(s) {
-      if (!s) return '—'
-      return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
-
-    onMounted(async () => {
-      try {
-        const { data } = await api.get('/api/analytics/overview')
-        overview.value = data
-      } finally {
-        loading.value = false
-      }
-
-      try {
-        const { data } = await api.get('/api/campaigns', { params: { status: 'sent', per_page: 20 } })
-        campaigns.value = data.campaigns || []
-      } finally {
-        campaignsLoading.value = false
-      }
-    })
-
-    return { overview, campaigns, loading, campaignsLoading, activePeriod, periods, deliverability, fmt, pct, formatDate }
-  },
+function fmt(n) {
+  if (n == null) return '0'
+  return Number(n).toLocaleString()
 }
+
+function pct(r) {
+  if (r == null) return '—'
+  return (Number(r) * 100).toFixed(1) + '%'
+}
+
+function formatDate(s) {
+  if (!s) return '—'
+  return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+onMounted(async () => {
+  try {
+    const { data } = await api.get('/api/analytics/overview')
+    overview.value = data
+  } finally {
+    loading.value = false
+  }
+
+  try {
+    const { data } = await api.get('/api/campaigns', { params: { status: 'sent', per_page: 20 } })
+    campaigns.value = data.campaigns || []
+  } finally {
+    campaignsLoading.value = false
+  }
+})
 </script>
 
 <style scoped>
@@ -185,38 +157,6 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.period-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.period-pill {
-  padding: 5px 14px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 120ms;
-}
-
-.period-pill.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.period-note {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-left: 6px;
 }
 
 .stat-grid {
@@ -329,10 +269,5 @@ export default {
 
 .num {
   font-variant-numeric: tabular-nums;
-}
-
-.rate-dash {
-  color: #ccc;
-  font-weight: 400;
 }
 </style>

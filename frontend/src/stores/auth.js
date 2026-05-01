@@ -6,6 +6,16 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('om_token') || null)
   const isAuthenticated = computed(() => !!token.value)
 
+  const userEmail = computed(() => {
+    if (!token.value) return ''
+    try {
+      const payload = JSON.parse(atob(token.value.split('.')[1]))
+      return payload.sub || ''
+    } catch {
+      return ''
+    }
+  })
+
   async function login(email, password) {
     const res = await api.post('/api/auth/login', { email, password })
     token.value = res.data.token
@@ -23,5 +33,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('om_token', t)
   }
 
-  return { token, isAuthenticated, login, logout, setToken }
+  return { token, isAuthenticated, userEmail, login, logout, setToken }
 })

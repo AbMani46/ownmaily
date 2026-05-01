@@ -11,16 +11,17 @@
           <div class="key-row">
             <div class="key-display">
               <span v-if="newKey">{{ newKey }}</span>
-              <span v-else>{{ keyPrefix }}{{ '•'.repeat(40) }}</span>
+              <span v-else class="key-masked">{{ keyPrefix }}{{ '•'.repeat(40) }}</span>
             </div>
-            <button class="icon-btn" @click="copyKey" :title="copied ? 'Copied!' : 'Copy'">
+            <!-- Copy button only available after regeneration when the key is visible -->
+            <button v-if="newKey" class="icon-btn" @click="copyKey" :title="copied ? 'Copied!' : 'Copy'">
               <span v-if="copied" class="copy-check">✓</span>
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
           </div>
         </div>
 
-        <!-- One-time reveal after regenerate -->
+        <!-- Warnings only shown after a key has been generated -->
         <transition name="slide">
           <div v-if="newKey" class="new-key-box">
             <div class="new-key-label">
@@ -30,10 +31,12 @@
           </div>
         </transition>
 
-        <div class="warn-box">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <p>This key grants full access to your OwnMaily installation. Keep it secret. It is shown in full only once after generation.</p>
-        </div>
+        <transition name="slide">
+          <div v-if="newKey" class="warn-box">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p>This key grants full access to your OwnMaily installation. Keep it secret. It is shown in full only once after generation.</p>
+          </div>
+        </transition>
       </div>
     </div>
 
@@ -144,6 +147,7 @@ export default {
 }
 .icon-btn:hover { border-color: #aaa; }
 .copy-check { font-size: 14px; color: var(--accent); font-weight: 700; }
+.key-masked { color: #666; letter-spacing: 0.05em; }
 .new-key-box {
   padding: 10px 14px;
   background: #fffbeb;

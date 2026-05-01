@@ -21,6 +21,9 @@
     </nav>
 
     <div class="sidebar-footer">
+      <div v-if="auth.userEmail" class="user-email-row">
+        <span class="user-email" :title="auth.userEmail">{{ auth.userEmail }}</span>
+      </div>
       <button class="logout-btn" @click="handleLogout">
         <LogOut class="nav-icon" :size="20" :stroke-width="1.75" />
         <span>Log out</span>
@@ -177,5 +180,18 @@ const navItems = [
 .logout-btn:hover {
   background: #161618;
   color: #cccccc;
+}
+
+.user-email-row {
+  padding: 6px 12px 2px;
+}
+
+.user-email {
+  font-size: 11px;
+  color: #666;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
