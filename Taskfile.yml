@@ -79,3 +79,19 @@ tasks:
     desc: Run production image locally
     cmds:
       - docker compose -f docker-compose.yml up -d
+
+  docker-push:
+    desc: Build and push production image to Docker Hub
+    cmds:
+      - docker build -t knobbly007/ownmaily:latest .
+      - docker push knobbly007/ownmaily:latest
+
+  docker-release:
+    desc: Build, push, and tag with git commit sha
+    vars:
+      SHA:
+        sh: git rev-parse --short HEAD
+    cmds:
+      - docker build -t knobbly007/ownmaily:latest -t knobbly007/ownmaily:{{.SHA}} .
+      - docker push knobbly007/ownmaily:latest
+      - docker push knobbly007/ownmaily:{{.SHA}}
