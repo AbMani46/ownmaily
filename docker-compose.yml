@@ -1,6 +1,6 @@
 services:
   app:
-    image: ownmaily/ownmaily:latest
+    image: ${DOCKER_IMAGE:-knobbly007/ownmaily:latest}
     build:
       context: .
       dockerfile: Dockerfile
