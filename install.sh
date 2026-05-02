@@ -49,6 +49,24 @@ if ! docker compose version &>/dev/null; then
   Docker Desktop: https://docs.docker.com/get-docker/"
 fi
 
+# ── Idempotency check ─────────────────────────────────────────────────────────
+INSTALL_DIR="$HOME/ownmaily"
+
+if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/.env" ]; then
+    echo "" >/dev/tty
+    echo "[!] OwnMaily is already installed at $INSTALL_DIR" >/dev/tty
+    echo "" >/dev/tty
+    echo "    To update:    cd $INSTALL_DIR && docker compose pull && docker compose up -d" >/dev/tty
+    echo "    To restart:   cd $INSTALL_DIR && docker compose restart" >/dev/tty
+    echo "    To uninstall: cd $INSTALL_DIR && docker compose down -v" >/dev/tty
+    echo "" >/dev/tty
+    read -r -p "Run anyway and overwrite existing install? [y/N] " confirm </dev/tty
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Exiting. Existing install unchanged."
+        exit 0
+    fi
+fi
+
 # ── Prompts (all via /dev/tty so curl-pipe works) ─────────────────────────────
 echo "" >/dev/tty
 echo -e "${BOLD}OwnMaily Setup${NC}" >/dev/tty
@@ -105,7 +123,6 @@ APP_SECRET=$(openssl rand -hex 32)
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 
 # ── Create install directory ───────────────────────────────────────────────────
-INSTALL_DIR="$HOME/ownmaily"
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 info "Install directory: $INSTALL_DIR"
