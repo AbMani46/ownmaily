@@ -65,6 +65,10 @@ if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/.env" ]; then
         echo "Exiting. Existing install unchanged."
         exit 0
     fi
+    info "Removing existing install..."
+    cd "$INSTALL_DIR"
+    docker compose down -v 2>/dev/null || true
+    cd "$HOME"
 fi
 
 # ── Prompts (all via /dev/tty so curl-pipe works) ─────────────────────────────
