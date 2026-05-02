@@ -158,6 +158,68 @@ Rewrote `install.sh` as a full production-quality interactive installer using wh
 
 ---
 
+## Session: README Quick Start Update
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Updated the Quick Start section of `README.md` to match the current install script flow exactly.
+
+**Changes:**
+- Added paragraph under the one-line install command explaining the three questions and automatic behaviour (Docker install, secret generation, port 4400)
+- Added "Open the URL in your browser to complete setup via the setup wizard." line
+- Renamed "Docker Compose (manual)" heading to "Manual install (Docker Compose)"
+- Added Windows section directing users to WSL2 or Railway/Render one-click buttons
+- Confirmed no em dashes anywhere in the file
+
+---
+
+## Session: Installer Rewrite (whiptail -> plain read)
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Rewrote `install.sh` from scratch to remove the whiptail dependency entirely. The
+new script uses plain `read` prompts via `/dev/tty` so it works correctly when piped
+from curl.
+
+**Changes from the previous installer:**
+- Removed all whiptail calls (welcome screen, inputboxes, passwordboxes, success msgbox)
+- All three prompts use `printf ... >/dev/tty` + `read -r ... </dev/tty` (or `read -rs` for passwords) so stdin from the curl pipe does not interfere
+- Error symbol changed from `[✗]` (unicode) to `[x]` (plain ASCII) per spec
+- No em dashes anywhere in output strings
+- Removed whiptail install logic entirely (no apt-get/yum/brew for whiptail)
+- Installation URL now defaults to `http://localhost:4400` (shown in bracket prompt) instead of pre-filled `https://`
+- Final summary is plain stdout only -- no secondary TUI screen
+
+**Flow unchanged:**
+- Windows detection, Docker auto-install via get.docker.com, Docker Compose v2 check
+- 3 questions: installation URL, admin email, admin password (min 8 chars, confirm loop)
+- Generates APP_SECRET and POSTGRES_PASSWORD via openssl rand
+- Creates ~/ownmaily, downloads docker-compose.yml, writes .env (chmod 600) and setup_credentials.txt (chmod 600)
+- docker compose pull + up -d
+- Polls http://localhost:4400/health every 3s, 60s timeout
+- Prints URL, admin email, credentials path, and delete reminder
+
+---
+
+## Session: Docker Hub Release Tasks
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Added two new tasks to `Taskfile.yml` for publishing to Docker Hub under `knobbly007/ownmaily`.
+
+- **`docker-push`** — builds the image tagged `knobbly007/ownmaily:latest` and pushes it. Standard release flow: `task docker-push`.
+- **`docker-release`** — builds and pushes both `latest` and a short-SHA tag (e.g. `knobbly007/ownmaily:a1b2c3d`) in one command. SHA is resolved at run time via `git rev-parse --short HEAD`.
+
+No other files changed.
+
+---
+
 ## Session: Secret Audit + .gitignore Fix
 **Date:** 2026-04-30
 **Status:** Complete
