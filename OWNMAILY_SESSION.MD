@@ -205,6 +205,20 @@ from curl.
 
 ---
 
+## Session: Installer DB_URL + Postgres Password Fix
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Two fixes to the "Generate secrets" and "Write .env" blocks in `install.sh`:
+
+1. **`DB_URL` now written to `.env`** — the script was generating `POSTGRES_PASSWORD` but never constructing or writing `DB_URL`, so the app container had no connection string at startup. Added `DB_URL="postgres://ownmaily:${POSTGRES_PASSWORD}@db:5432/ownmaily?sslmode=disable"` immediately after the password is set, and added `DB_URL=${DB_URL}` to the `.env` heredoc.
+
+2. **`POSTGRES_PASSWORD` simplified to fixed value `ownmaily`** — the random hex password was unnecessary complexity. The password is internal to the Docker network and never exposed externally; the Docker service name (`db`) is not reachable from outside the compose network. Using a fixed value removes a source of state divergence when re-running or debugging.
+
+---
+
 ## Session: Installer Idempotency
 **Date:** 2026-05-01
 **Status:** Complete
