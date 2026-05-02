@@ -205,6 +205,21 @@ from curl.
 
 ---
 
+## Session: Installer Idempotency
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Added an idempotency check to `install.sh`. If `~/ownmaily/.env` already exists when the script runs, it now:
+1. Prints a notice with the three most useful management commands (update, restart, uninstall)
+2. Prompts "Run anyway and overwrite existing install? [y/N]" — defaults to No on Enter
+3. Exits cleanly without touching anything unless the user explicitly confirms with `y` or `Y`
+
+The check is placed after the OS and Docker guards but before any prompts, so it short-circuits as early as possible. The `INSTALL_DIR` variable was moved up to the idempotency block and the duplicate declaration lower in the script was removed.
+
+---
+
 ## Session: Image Name + Installer + .env.example Fixes
 **Date:** 2026-05-01
 **Status:** Complete
