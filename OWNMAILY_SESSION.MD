@@ -205,6 +205,18 @@ from curl.
 
 ---
 
+## Session: Reinstall Volume Wipe
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Extended the idempotency check in `install.sh`: when the user confirms they want to overwrite an existing install, the script now runs `docker compose down -v` before proceeding. This destroys the old Postgres volume so it is recreated cleanly with the new credentials, preventing a password-mismatch error on the next `docker compose up -d`.
+
+The `cd "$INSTALL_DIR"` / `cd "$HOME"` pair scopes the compose command to the existing install directory without changing the working directory for the rest of the script.
+
+---
+
 ## Session: Installer DB_URL + Postgres Password Fix
 **Date:** 2026-05-01
 **Status:** Complete
