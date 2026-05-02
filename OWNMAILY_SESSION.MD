@@ -324,3 +324,53 @@ No hardcoded API keys, tokens, real email addresses, or JWT secrets found outsid
 **`.gitignore`** — added exception to track `.env.example`:
 - Changed `**/.env*` → two lines: `**/.env*` + `!.env.example`
 - Verified: `.env` remains ignored; `.env.example` is now untracked (visible to git)
+
+---
+
+## Session: Installer Simplification + Skippable Wizard Steps
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+#### 1. `install.sh` — removed admin email and password prompts
+
+The script now asks only one question: installation URL. All references to `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSWORD_CONFIRM`, and `setup_credentials.txt` were removed.
+
+- Removed the admin email prompt block (loop with `@` validation)
+- Removed the admin password prompt block (min 8 chars, confirm loop)
+- Removed the `setup_credentials.txt` write block and its `chmod 600`
+- Updated the header line from "Answer 3 questions" to "Answer one question"
+- Updated the success message: removed the "Your admin email is..." and "Delete setup_credentials.txt" lines
+
+The success summary now simply reads:
+```
+OwnMaily is running at <URL>
+Open that URL in your browser to complete setup.
+```
+
+---
+
+#### 2. `SetupWizardView.vue` — skippable SMTP and test email steps
+
+The setup wizard now only hard-requires two things: creating an account (step 2) and clicking Finish Setup (step 5). All other steps are skippable.
+
+**SMTP step (step 4, `currentStep === 3`):**
+- `nextDisabled` computed changed from `return !smtpTested.value` to `return false` — Continue is never blocked
+- Hint text updated: "Test the connection above to continue" → "Test your connection or skip and configure SMTP later in Settings."
+- Added "Skip for now" ghost button in the footer-right, shown when `currentStep === 3 || currentStep === 4`
+
+**Test email step (step 5, `currentStep === 4`):**
+- Added "Skip for now" ghost button (same `v-if` condition)
+- On the last step, `skipStep()` delegates to `goNext()` which calls `/api/setup/complete` and redirects — same as "Finish Setup"
+
+**New `skipStep()` function:**
+- If on the last step: calls `goNext()` (completing setup)
+- Otherwise: increments `currentStep` directly (bypassing any API call)
+
+---
+
+#### 3. `README.md` — updated Quick Start description
+
+- Changed "You will be asked for three things: your installation URL, admin email, and admin password." to reflect the new single-question install flow
+- Added note that SMTP is skippable and can be added later in Settings
