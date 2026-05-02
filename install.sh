@@ -120,7 +120,8 @@ echo "" >/dev/tty
 
 # ── Generate secrets ───────────────────────────────────────────────────────────
 APP_SECRET=$(openssl rand -hex 32)
-POSTGRES_PASSWORD=$(openssl rand -hex 16)
+POSTGRES_PASSWORD=ownmaily
+DB_URL="postgres://ownmaily:${POSTGRES_PASSWORD}@db:5432/ownmaily?sslmode=disable"
 
 # ── Create install directory ───────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR"
@@ -138,6 +139,7 @@ fi
 # ── Write .env ─────────────────────────────────────────────────────────────────
 cat > .env <<EOF
 APP_SECRET=${APP_SECRET}
+DB_URL=${DB_URL}
 INSTALLATION_URL=${INSTALLATION_URL}
 PORT=4400
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
