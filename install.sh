@@ -74,11 +74,10 @@ fi
 # ── Prompts (all via /dev/tty so curl-pipe works) ─────────────────────────────
 echo "" >/dev/tty
 echo -e "${BOLD}OwnMaily Setup${NC}" >/dev/tty
-echo "Answer 3 questions and the rest is automatic." >/dev/tty
+echo "Answer one question and the rest is automatic." >/dev/tty
 echo "" >/dev/tty
 
-# 1. Installation URL
-echo "" >/dev/tty
+# Installation URL
 echo "  Examples:" >/dev/tty
 echo "    http://123.456.789.0:4400   (IP address, testing)" >/dev/tty
 echo "    http://localhost:4400        (local machine)" >/dev/tty
@@ -91,34 +90,6 @@ printf "${BOLD}Installation URL${NC} [http://localhost:4400]: " >/dev/tty
 read -r INSTALLATION_URL </dev/tty
 INSTALLATION_URL="${INSTALLATION_URL:-http://localhost:4400}"
 INSTALLATION_URL="${INSTALLATION_URL%%/}"
-
-# 2. Admin email
-while true; do
-    printf "${BOLD}Admin email:${NC} " >/dev/tty
-    read -r ADMIN_EMAIL </dev/tty
-    if [[ "$ADMIN_EMAIL" == *"@"* && ${#ADMIN_EMAIL} -gt 3 ]]; then
-        break
-    fi
-    warn "Please enter a valid email address." >/dev/tty
-done
-
-# 3. Admin password (min 8 chars, confirmed)
-while true; do
-    printf "${BOLD}Admin password${NC} (min 8 chars): " >/dev/tty
-    read -rs ADMIN_PASSWORD </dev/tty
-    echo "" >/dev/tty
-    if [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-        warn "Password must be at least 8 characters. Try again." >/dev/tty
-        continue
-    fi
-    printf "${BOLD}Confirm password:${NC} " >/dev/tty
-    read -rs ADMIN_PASSWORD_CONFIRM </dev/tty
-    echo "" >/dev/tty
-    if [[ "$ADMIN_PASSWORD" == "$ADMIN_PASSWORD_CONFIRM" ]]; then
-        break
-    fi
-    warn "Passwords do not match. Try again." >/dev/tty
-done
 
 echo "" >/dev/tty
 
@@ -150,19 +121,6 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 EOF
 chmod 600 .env
 info "Created .env"
-
-# ── Write setup credentials ────────────────────────────────────────────────────
-cat > setup_credentials.txt <<EOF
-OwnMaily Setup Credentials
-==========================
-Admin Email:    ${ADMIN_EMAIL}
-Admin Password: ${ADMIN_PASSWORD}
-
-Keep these ready for the setup wizard at ${INSTALLATION_URL}.
-Delete this file after the wizard is complete.
-EOF
-chmod 600 setup_credentials.txt
-info "Credentials saved to $INSTALL_DIR/setup_credentials.txt"
 
 # ── Pull images and start ──────────────────────────────────────────────────────
 info "Pulling Docker images (this may take a minute)..."
@@ -201,8 +159,6 @@ echo -e "${BOLD}============================================${NC}"
 echo ""
 echo -e "  OwnMaily is running at ${BOLD}${INSTALLATION_URL}${NC}"
 echo -e "  Open that URL in your browser to complete setup."
-echo -e "  Your admin email is ${BOLD}${ADMIN_EMAIL}${NC} -- have your password ready."
-echo -e "  ${YELLOW}[!]${NC} Delete setup_credentials.txt after setup is complete."
 echo ""
 if [[ $READY -ne 1 ]]; then
     warn "Health check timed out. OwnMaily may still be starting up."

@@ -201,6 +201,9 @@ func setupGuard(queries *db2.Queries) func(http.Handler) http.Handler {
 				strings.HasPrefix(path, "/confirm") ||
 				strings.HasPrefix(path, "/webhooks/") ||
 				strings.HasPrefix(path, "/embed/") ||
+				strings.HasPrefix(path, "/assets/") ||
+				path == "/favicon.ico" ||
+				path == "/favicon.svg" ||
 				path == "/health" {
 				next.ServeHTTP(w, r)
 				return

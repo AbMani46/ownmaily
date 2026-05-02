@@ -21,9 +21,9 @@ Self-hosted email marketing. No subscriber limits, no monthly fees. Free to self
 curl -fsSL https://ownmaily.com/install.sh | bash
 ```
 
-You will be asked for three things: your installation URL, admin email, and admin password. Everything else is handled automatically -- Docker is installed if missing, a random secret is generated, and the stack starts. OwnMaily will be live on port 4400.
+You will be asked for one thing: your installation URL. Everything else is handled automatically -- Docker is installed if missing, a random secret is generated, and the stack starts on port 4400.
 
-Open the URL in your browser to complete setup via the setup wizard.
+Open the URL in your browser to complete setup. The setup wizard will walk you through creating your admin account and connecting an SMTP provider (skippable -- you can add SMTP later in Settings).
 
 ### Manual install (Docker Compose)
 

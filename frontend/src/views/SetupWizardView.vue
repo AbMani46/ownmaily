@@ -167,8 +167,15 @@
           </button>
           <div class="footer-right">
             <span v-if="currentStep === 3 && !smtpTested" class="continue-hint">
-              Test the connection above to continue
+              Test your connection or skip and configure SMTP later in Settings.
             </span>
+            <button
+              v-if="currentStep === 3 || currentStep === 4"
+              class="btn-ghost"
+              @click="skipStep"
+            >
+              Skip for now
+            </button>
             <button
               class="btn-primary"
               :disabled="nextDisabled || stepLoading"
@@ -238,10 +245,16 @@ export default {
       owner.value.confirm.length > 0 && owner.value.password !== owner.value.confirm
     )
 
-    const nextDisabled = computed(() => {
-      if (currentStep.value === 3) return !smtpTested.value
-      return false
-    })
+    const nextDisabled = computed(() => false)
+
+    function skipStep() {
+      stepError.value = ''
+      if (currentStep.value === steps.length - 1) {
+        goNext()
+      } else {
+        currentStep.value++
+      }
+    }
 
     function buildSmtpCredentials() {
       const p = smtp.value.provider
@@ -334,7 +347,7 @@ export default {
       owner, general, smtp, testEmail, testEmailSent, sendingTest,
       smtpTested, testingSmtp, smtpTestResult,
       timezones, passwordMismatch, nextDisabled,
-      goNext, goBack, testSmtp, sendTestEmail,
+      goNext, goBack, skipStep, testSmtp, sendTestEmail,
     }
   },
 }

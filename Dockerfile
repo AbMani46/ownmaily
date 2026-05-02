@@ -17,5 +17,6 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/ownmaily .
+COPY --from=builder /app/frontend/dist ./frontend/dist
 EXPOSE 4400
 CMD ["./ownmaily"]
