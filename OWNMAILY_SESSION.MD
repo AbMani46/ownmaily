@@ -205,6 +205,28 @@ from curl.
 
 ---
 
+## Session: Image Name + Installer + .env.example Fixes
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Three targeted fixes across `docker-compose.yml`, `install.sh`, and `.env.example`.
+
+**1. Docker image name (`docker-compose.yml`)**
+- Changed `image: ownmaily/ownmaily:latest` to `image: ${DOCKER_IMAGE:-knobbly007/ownmaily:latest}`.
+- Default resolves to the correct Docker Hub namespace; self-builders can override by setting `DOCKER_IMAGE` in `.env`.
+
+**2. Installation URL prompt (`install.sh`)**
+- Added an examples block above the URL prompt (printed to `/dev/tty` so curl-pipe works):
+  - IP address (testing), localhost, and production HTTPS examples
+  - A plain-text note reminding users to use `https://` only if SSL is already set up
+
+**3. `.env.example` update**
+- Added `DOCKER_IMAGE=knobbly007/ownmaily:latest` with a `# Docker image (change if self-building)` comment so the override path is self-documenting.
+
+---
+
 ## Session: Docker Hub Release Tasks
 **Date:** 2026-05-01
 **Status:** Complete
