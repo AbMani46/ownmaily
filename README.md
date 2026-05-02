@@ -66,7 +66,7 @@ Migrations run automatically on startup.
 
 ## Other Free Tools
 
-Built by the same developer:
+I also created:
 
 - **Middl** -- [getmiddl.com](https://getmiddl.com), free AI-powered freelance workspace
 - **SolidUptime** -- [soliduptime.org](https://soliduptime.org), free uptime monitoring with incident grouping
