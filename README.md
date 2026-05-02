@@ -2,15 +2,18 @@
 
 Self-hosted email marketing. No subscriber limits, no monthly fees. Free to self-host -- support development with a one-time $49 payment at [ownmaily.com](https://ownmaily.com).
 
+## What it does
+
+OwnMaily is a self-hosted email marketing tool for indie founders, bootstrappers, and small newsletter operators who want full control over their list without paying $50/month to a SaaS. You run it on your own server, connect your own SMTP provider, and own your data. No subscriber limits, no sending limits, no recurring fees.
+
 ## Features
 
 - Send campaigns to unlimited subscribers
-- Import/export CSV
+- Import and export subscribers via CSV
 - Open and click tracking
 - Bounce handling (Resend, Mailgun, Amazon SES)
 - Scheduled campaigns
-- Embeddable signup forms
-- Double opt-in support
+- Embeddable signup forms with double opt-in
 - Full REST API
 
 ## Quick Start
@@ -21,9 +24,15 @@ Self-hosted email marketing. No subscriber limits, no monthly fees. Free to self
 curl -fsSL https://ownmaily.com/install.sh | bash
 ```
 
-You will be asked for one thing: your installation URL. Everything else is handled automatically -- Docker is installed if missing, a random secret is generated, and the stack starts on port 4400.
+You will be asked for your installation URL. Everything else is automatic.
 
-Open the URL in your browser to complete setup. The setup wizard will walk you through creating your admin account and connecting an SMTP provider (skippable -- you can add SMTP later in Settings).
+[Full installation guide](https://ownmaily.com/docs/getting-started/installation)
+
+### Before going to production
+
+> If you are planning to use OwnMaily seriously, read the documentation at [ownmaily.com/docs](https://ownmaily.com/docs) before getting started. There are a few things to set up -- a domain, SSL, and an SMTP provider -- and the docs walk you through all of it step by step.
+
+Not a reader? Point your AI assistant at https://ownmaily.com/llms.txt and ask it to walk you through setup.
 
 ### Manual install (Docker Compose)
 
@@ -31,15 +40,24 @@ Open the URL in your browser to complete setup. The setup wizard will walk you t
 git clone https://github.com/AbMani46/ownmaily
 cd ownmaily
 cp .env.example .env
-# Edit .env -- set APP_SECRET and INSTALLATION_URL
 docker compose up -d
 ```
 
-Visit `http://localhost:4400` to complete setup.
-
 ### Windows
 
-Windows is not supported by the install script. Use WSL2 or deploy via Railway/Render using the one-click buttons in the repo.
+Use WSL2 or deploy via Railway or Render.
+
+## SMTP Providers
+
+OwnMaily requires you to bring your own SMTP provider:
+
+| Provider   | Free tier          | Notes                           |
+| ---------- | ------------------ | ------------------------------- |
+| Resend     | 3,000/month        | Recommended for getting started |
+| Mailgun    | Pay as you go      | Good deliverability             |
+| Amazon SES | 62,000/month (EC2) | Cheapest at scale               |
+
+Full setup guides at [ownmaily.com/docs/smtp](https://ownmaily.com/docs/smtp)
 
 ## Resource Usage
 
@@ -54,17 +72,7 @@ Approximate values for a typical self-hosted install:
 
 A $6/month VPS (2GB RAM, 20GB disk) is more than enough to get started.
 
-## SMTP Providers
-
-OwnMaily requires you to bring your own SMTP provider:
-
-| Provider   | Free tier          | Notes                           |
-| ---------- | ------------------ | ------------------------------- |
-| Resend     | 3,000/month        | Recommended for getting started |
-| Mailgun    | Pay as you go      | Good deliverability             |
-| Amazon SES | 62,000/month (EC2) | Cheapest at scale               |
-
-## Updates
+## Updating
 
 ```bash
 docker compose pull && docker compose up -d

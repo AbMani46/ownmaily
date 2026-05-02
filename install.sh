@@ -78,13 +78,13 @@ echo "Answer one question and the rest is automatic." >/dev/tty
 echo "" >/dev/tty
 
 # Installation URL
-echo "  Examples:" >/dev/tty
-echo "    http://123.456.789.0:4400   (IP address, testing)" >/dev/tty
-echo "    http://localhost:4400        (local machine)" >/dev/tty
-echo "    https://mail.yourdomain.com  (production with domain)" >/dev/tty
+echo "  What to enter here:" >/dev/tty
 echo "" >/dev/tty
-echo "  Note: if you have SSL set up, use https://. Most fresh" >/dev/tty
-echo "  installs without a domain should use http:// for now." >/dev/tty
+echo "  Testing locally:      http://localhost:4400" >/dev/tty
+echo "  On a remote server:   http://$(curl -sf https://ifconfig.me || echo '<your-server-ip>'):4400" >/dev/tty
+echo "  With a domain:        https://mail.yourdomain.com" >/dev/tty
+echo "" >/dev/tty
+echo "  Not sure? Use the remote server line above -- your IP was auto-detected." >/dev/tty
 echo "" >/dev/tty
 printf "${BOLD}Installation URL${NC} [http://localhost:4400]: " >/dev/tty
 read -r INSTALLATION_URL </dev/tty
@@ -164,4 +164,9 @@ if [[ $READY -ne 1 ]]; then
     warn "Health check timed out. OwnMaily may still be starting up."
     warn "Check logs: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
     echo ""
+fi
+
+# ── Self-cleanup (manual run only) ────────────────────────────────────────────
+if [[ -f "$0" && "$0" != "bash" && "$0" != "/dev/stdin" ]]; then
+    rm -f "$0" 2>/dev/null || true
 fi

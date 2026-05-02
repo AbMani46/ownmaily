@@ -374,3 +374,68 @@ The setup wizard now only hard-requires two things: creating an account (step 2)
 
 - Changed "You will be asked for three things: your installation URL, admin email, and admin password." to reflect the new single-question install flow
 - Added note that SMTP is skippable and can be added later in Settings
+
+---
+
+## Session: Installer Self-Cleanup
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Added a self-cleanup block at the very end of `install.sh`. When the script is run directly (`bash install.sh` or `./install.sh`), it deletes itself after completion. When piped from curl (`curl ... | bash`), `$0` is `bash` or `/dev/stdin` so the guard skips the deletion safely.
+
+```bash
+if [[ -f "$0" && "$0" != "bash" && "$0" != "/dev/stdin" ]]; then
+    rm -f "$0" 2>/dev/null || true
+fi
+```
+
+The `|| true` ensures a permission error does not abort the script under `set -euo pipefail`.
+
+---
+
+## Session: Installer URL Hint with Auto-Detected IP
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Replaced the static examples block above the Installation URL prompt in `install.sh` with a clearer hint block that auto-detects the server's public IP at runtime.
+
+**Before:** generic placeholder IP (`123.456.789.0`) with a trailing SSL note.
+
+**After:**
+```
+  What to enter here:
+
+  Testing locally:      http://localhost:4400
+  On a remote server:   http://<live-ip>:4400
+  With a domain:        https://mail.yourdomain.com
+
+  Not sure? Use the remote server line above -- your IP was auto-detected.
+```
+
+The remote server line runs `curl -sf https://ifconfig.me` inline when the hint is printed and substitutes the real public IP. Falls back to the literal string `<your-server-ip>` if the request fails (no internet, curl not present, etc.).
+
+---
+
+## Session: README Rewrite
+**Date:** 2026-05-01
+**Status:** Complete
+
+### What was done
+
+Rewrote `README.md` from scratch to be thin and orienting. The docs site (ownmaily.com/docs) now does the heavy lifting; the README's only job is to get the reader oriented and point them to the right place.
+
+**Structure:**
+- Added "What it does" paragraph -- one-sentence pitch + who it is for
+- Kept Features list, trimmed to essentials
+- Quick Start: one-line install (single question, everything else automatic) + link to full install guide
+- Added "Before going to production" blockquote callout pointing to ownmaily.com/docs
+- Manual install kept simple (no inline .env editing instructions -- docs cover that)
+- Windows: one line, WSL2 or Railway/Render
+- Kept SMTP table + added link to ownmaily.com/docs/smtp
+- Kept Resource Usage table and Updating section unchanged
+- Kept Other Free Tools section unchanged
+- No em dashes anywhere
