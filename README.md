@@ -1,6 +1,6 @@
 # OwnMaily
 
-Self-hosted email marketing. No subscriber limits, no monthly fees. Free to self-host -- support development with a one-time $49 payment at [ownmaily.com](https://ownmaily.com).
+Self-hosted email marketing. No subscriber limits, no monthly fees. Free to self-host -- support development with a donation at [ownmaily.com](https://ownmaily.com).
 
 ## What it does
 
@@ -40,12 +40,13 @@ Not a reader? Point your AI assistant at https://ownmaily.com/llms.txt and ask i
 git clone https://github.com/AbMani46/ownmaily
 cd ownmaily
 cp .env.example .env
+# Edit .env -- APP_SECRET and DB_URL are required, the server will not start without them
 docker compose up -d
 ```
 
 ### Windows
 
-Use WSL2 or deploy via Railway or Render.
+Use WSL2 or a Linux VPS.
 
 ## SMTP Providers
 
@@ -57,7 +58,7 @@ OwnMaily requires you to bring your own SMTP provider:
 | Mailgun    | Pay as you go      | Good deliverability             |
 | Amazon SES | 62,000/month (EC2) | Cheapest at scale               |
 
-Full setup guides at [ownmaily.com/docs/smtp](https://ownmaily.com/docs/smtp)
+Your sending domain must be verified with your provider before any email can be sent. This is the most common setup mistake -- see [ownmaily.com/docs/smtp](https://ownmaily.com/docs/smtp) for provider-specific instructions.
 
 ## Resource Usage
 
