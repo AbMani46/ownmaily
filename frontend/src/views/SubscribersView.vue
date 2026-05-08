@@ -25,6 +25,35 @@
       </BaseButton>
     </div>
 
+    <!-- Selection bar -->
+    <div v-if="selectedIds.size > 0" class="selection-bar">
+      <span class="sel-count">{{ selectedIds.size }} selected</span>
+      <div class="sel-actions">
+        <div class="sel-list-wrap">
+          <select v-model="bulkListId" class="sel-list-select">
+            <option value="">Add to list…</option>
+            <option v-for="l in lists" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
+          <BaseButton
+            variant="primary"
+            size="sm"
+            :disabled="!bulkListId"
+            :loading="bulkLoading"
+            @click="submitBulkAdd"
+          >
+            Add to List
+          </BaseButton>
+        </div>
+        <span class="sel-divider">·</span>
+        <button class="sel-link" @click="selectAll">
+          Select all ({{ subscribers.length }})
+        </button>
+        <span class="sel-divider">·</span>
+        <button class="sel-link" @click="clearSelection">Deselect all</button>
+      </div>
+      <span v-if="bulkSuccess" class="sel-success">{{ bulkSuccess }}</span>
+    </div>
+
     <!-- Tabs + Table -->
     <BaseCard :noPadding="true">
       <div class="tabs-wrap">
@@ -43,6 +72,7 @@
       <!-- Skeleton rows while loading -->
       <div v-if="loading" class="sk-table">
         <div v-for="n in 8" :key="n" class="sk-row">
+          <div class="sk sk-check" />
           <div class="sk sk-text-wide" />
           <div class="sk sk-badge" />
           <div class="sk sk-tags" />
@@ -56,6 +86,15 @@
         :rows="subscribers"
         @row-click="row => $router.push('/subscribers/' + row.id)"
       >
+        <template #cell-_select="{ row }">
+          <input
+            type="checkbox"
+            class="row-checkbox"
+            :checked="selectedIds.has(row.id)"
+            @click.stop
+            @change="toggleSelect(row.id)"
+          />
+        </template>
         <template #cell-email="{ value, row }">
           <div class="email-cell">{{ value }}</div>
           <div class="name-cell">{{ row.first_name }} {{ row.last_name }}</div>
@@ -116,6 +155,14 @@
     <BaseModal :show="showImport" title="Import Subscribers" @close="closeImport">
       <div class="form">
         <div class="form-field">
+          <label class="field-label">Add to list <span class="field-optional">(optional)</span></label>
+          <select v-model="importListId" class="field-select">
+            <option value="">No specific list</option>
+            <option v-for="l in lists" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
+        </div>
+
+        <div class="form-field">
           <div
             class="dropzone"
             :class="{ 'dropzone--active': isDragging, 'dropzone--selected': importFile }"
@@ -136,6 +183,7 @@
             <span v-else class="dropzone-label">Click to browse or drag a CSV here</span>
             <span class="dropzone-hint">Required: <code>email</code> &nbsp;·&nbsp; Optional: <code>first_name</code>, <code>last_name</code></span>
           </div>
+          <p class="import-ai-hint">Already have subscribers? Export your list, filter with AI, and import back.</p>
         </div>
 
         <div v-if="importPreview" class="import-preview">
@@ -190,6 +238,13 @@ const activeTab = ref('all')
 const search = ref('')
 const loading = ref(false)
 const overview = ref(null)
+const lists = ref([])
+
+// Selection state
+const selectedIds = ref(new Set())
+const bulkListId = ref('')
+const bulkLoading = ref(false)
+const bulkSuccess = ref('')
 
 const showAdd = ref(false)
 const addLoading = ref(false)
@@ -202,6 +257,7 @@ const importFile = ref(null)
 const importPreview = ref(null)
 const importResult = ref(null)
 const importError = ref('')
+const importListId = ref('')
 const fileInput = ref(null)
 const isDragging = ref(false)
 
@@ -215,6 +271,7 @@ const tabs = computed(() => [
 ])
 
 const cols = [
+  { key: '_select', label: '' },
   { key: 'email', label: 'Email / Name' },
   { key: 'status', label: 'Status' },
   { key: 'tags', label: 'Tags' },
@@ -236,6 +293,41 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function toggleSelect(id) {
+  const s = new Set(selectedIds.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  selectedIds.value = s
+}
+
+function selectAll() {
+  selectedIds.value = new Set(subscribers.value.map(s => s.id))
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+  bulkListId.value = ''
+  bulkSuccess.value = ''
+}
+
+async function submitBulkAdd() {
+  if (!bulkListId.value || selectedIds.value.size === 0) return
+  bulkLoading.value = true
+  bulkSuccess.value = ''
+  try {
+    const res = await api.post(`/api/lists/${bulkListId.value}/subscribers/bulk`, {
+      subscriber_ids: [...selectedIds.value],
+    })
+    const added = res.data.added ?? selectedIds.value.size
+    bulkSuccess.value = `Added ${added} to list.`
+    clearSelection()
+  } catch (e) {
+    console.error('bulk add error', e)
+  } finally {
+    bulkLoading.value = false
+  }
+}
+
 async function fetchSubscribers() {
   loading.value = true
   try {
@@ -246,6 +338,8 @@ async function fetchSubscribers() {
     const res = await api.get('/api/subscribers', { params })
     subscribers.value = res.data.subscribers ?? []
     total.value = res.data.total ?? 0
+    // Clear selection when the page changes so stale IDs don't persist
+    clearSelection()
   } catch (e) {
     console.error('fetch subscribers error', e)
   } finally {
@@ -257,6 +351,15 @@ async function fetchOverview() {
   try {
     const res = await api.get('/api/analytics/overview')
     overview.value = res.data
+  } catch (e) {
+    // non-critical
+  }
+}
+
+async function fetchLists() {
+  try {
+    const res = await api.get('/api/lists')
+    lists.value = res.data.lists ?? []
   } catch (e) {
     // non-critical
   }
@@ -336,6 +439,7 @@ function closeImport() {
   importPreview.value = null
   importResult.value = null
   importError.value = ''
+  importListId.value = ''
   if (fileInput.value) fileInput.value.value = ''
 }
 
@@ -392,6 +496,7 @@ async function submitImport() {
   try {
     const form = new FormData()
     form.append('file', importFile.value)
+    if (importListId.value) form.append('list_id', importListId.value)
     const res = await api.post('/api/subscribers/import', form)
     importResult.value = res.data
     fetchSubscribers()
@@ -406,6 +511,7 @@ async function submitImport() {
 onMounted(() => {
   fetchSubscribers()
   fetchOverview()
+  fetchLists()
 })
 </script>
 
@@ -456,6 +562,83 @@ onMounted(() => {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
 }
 
+/* Selection bar */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #f0fdf9;
+  border: 1px solid #d1fae5;
+  border-radius: var(--radius-card);
+  font-size: 13px;
+}
+
+.sel-count {
+  font-weight: 600;
+  color: #065f46;
+  white-space: nowrap;
+}
+
+.sel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.sel-list-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sel-list-select {
+  padding: 5px 10px;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-input);
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+.sel-list-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.sel-divider {
+  color: #a7f3d0;
+  font-size: 12px;
+}
+
+.sel-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-family: inherit;
+  color: #059669;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sel-link:hover {
+  color: #047857;
+}
+
+.sel-success {
+  font-size: 12px;
+  color: #059669;
+  font-weight: 500;
+  margin-left: auto;
+}
+
 /* Tabs */
 .tabs-wrap {
   display: flex;
@@ -502,6 +685,14 @@ onMounted(() => {
 
 .pagination-wrap {
   padding: 0 14px 14px;
+}
+
+/* Checkbox column */
+.row-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* Table cell content */
@@ -562,6 +753,7 @@ onMounted(() => {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.sk-check { height: 15px; width: 15px; border-radius: 3px; flex-shrink: 0; }
 .sk-text { height: 12px; width: 70px; }
 .sk-text-wide { height: 12px; width: 180px; }
 .sk-badge { height: 20px; width: 60px; border-radius: 20px; }
@@ -598,21 +790,38 @@ onMounted(() => {
   letter-spacing: 0.02em;
 }
 
+.field-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.field-select {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: var(--radius-input);
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.field-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
 .required {
   color: #dc2626;
 }
 
-.field-hint {
-  font-size: 11px;
+.import-ai-hint {
+  font-size: 11.5px;
   color: var(--text-muted);
   margin: 4px 0 0;
-}
-
-.field-hint code {
-  font-family: 'JetBrains Mono', monospace;
-  background: #f4f3ef;
-  padding: 1px 4px;
-  border-radius: 3px;
+  font-style: italic;
 }
 
 .file-input-hidden {

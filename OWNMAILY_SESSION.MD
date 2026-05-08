@@ -1,5 +1,7 @@
 # OwnMaily Session Log
 
+> **Docs note — Image uploads:** Images must be fully edited/resized before uploading. OwnMaily does not offer any in-editor image editing (cropping, resizing, filters, etc.). The docs should make this explicit so users know to prepare their images in an external tool first.
+
 ---
 
 ## Session: UI Polish — Pre-Launch Audit Fixes
@@ -439,3 +441,34 @@ Rewrote `README.md` from scratch to be thin and orienting. The docs site (ownmai
 - Kept Resource Usage table and Updating section unchanged
 - Kept Other Free Tools section unchanged
 - No em dashes anywhere
+
+---
+
+## Session: SMTP Step UX Improvements
+**Date:** 2026-05-02
+**Status:** Complete
+
+### What was done
+
+Rewrote the SMTP step (step 4) in `SetupWizardView.vue` with smarter UX around domain verification.
+
+**Field reorder:** From name and from email now appear before provider selection and API key. Users establish their sending identity before touching credentials.
+
+**From email domain hint:** A soft gray info box appears below the from email field as soon as the user types an address with an `@`. It reads "Sending from: yourdomain.com -- Make sure this domain is verified with your SMTP provider before testing." Computed via `smtpFromDomain` (splits on `@`, returns the part after).
+
+**Provider-specific hints:** A soft blue info box appears below the provider selector for all three providers:
+- Resend: explains verified domain requirement, mentions 403 error on failure
+- Mailgun: points to Sending Domains in the dashboard
+- SES: mentions sandbox mode restriction on unverified addresses
+
+**Smarter test failure messages:** `testSmtp()` now parses the raw error string (lowercased) and maps it to one of four outcomes:
+- Contains "403", "domain", or "not verified": domain verification message with ownmaily.com/docs/smtp link
+- Contains "401", "unauthorized", or "invalid": API key message
+- Contains "timeout" or "connection": connectivity message
+- Otherwise: raw error with a docs link appended
+
+**Skip button note:** The `continue-hint` span now always shows alongside the Skip button (both on steps 3 and 4) with the text: "You can configure SMTP later in Settings. You will need it before sending your first campaign."
+
+**Other:** Added `from_email` and `from_name` to the `smtp` ref. Both are passed to `PUT /api/setup/smtp` alongside existing credentials. Removed all em dashes from the SMTP step including the "Check your inbox" test-success line.
+
+**CSS added:** `.provider-hint` (light blue, `#f0f6ff` background) and `.domain-hint` (light gray, `#f5f5f5` background), both small text and non-alarming.

@@ -1,19 +1,5 @@
 <template>
   <div class="campaign-edit">
-    <!-- Template selector -->
-    <div class="template-bar">
-      <span class="template-label">Template:</span>
-      <button
-        v-for="t in templates"
-        :key="t.id"
-        class="template-pill"
-        :class="{ active: selectedTemplate === t.id }"
-        @click="confirmApplyTemplate(t.id)"
-      >
-        {{ t.label }}
-      </button>
-    </div>
-
     <!-- Two-column layout -->
     <div class="editor-layout">
       <!-- Left: Settings panel -->
@@ -96,60 +82,63 @@
 
       <!-- Right: Editor -->
       <div class="editor-panel">
-        <!-- Toolbar -->
-        <div class="toolbar">
-          <button class="tb-btn" title="Bold" @mousedown.prevent @click="execCmd('bold')"><strong>B</strong></button>
-          <button class="tb-btn tb-italic" title="Italic" @mousedown.prevent @click="execCmd('italic')"><em>I</em></button>
-          <button class="tb-btn tb-underline" title="Underline" @mousedown.prevent @click="execCmd('underline')"><u>U</u></button>
-
-          <div class="toolbar-sep" />
-
-          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h1')">H1</button>
-          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h2')">H2</button>
-          <button class="tb-pill" @mousedown.prevent @click="execCmd('formatBlock', 'h3')">H3</button>
-
-          <div class="toolbar-sep" />
-
-          <button class="tb-btn" title="Link" @mousedown.prevent @click="openLinkModal">
-            <Link2 :size="13" color="#555" />
-          </button>
-          <button class="tb-btn" title="Unordered list" @mousedown.prevent @click="execCmd('insertUnorderedList')">
-            <List :size="13" color="#555" />
-          </button>
-
-          <div class="toolbar-spacer" />
-
-          <button class="preview-toggle" @click="previewMode = !previewMode">
-            <Eye :size="12" />
-            {{ previewMode ? 'Edit' : 'Preview' }}
+        <!-- Template selector -->
+        <div class="template-bar">
+          <span class="template-label">Template:</span>
+          <button
+            v-for="t in templates"
+            :key="t.id"
+            class="template-pill"
+            :class="{ active: selectedTemplate === t.id }"
+            @click="confirmApplyTemplate(t.id)"
+          >
+            {{ t.label }}
           </button>
         </div>
-
         <!-- Content area -->
         <div class="editor-content" :class="{ 'preview-bg': previewMode }">
           <!-- Edit mode -->
-          <div
-            v-show="!previewMode"
-            ref="editorRef"
-            class="editor-area"
-            contenteditable="true"
-            data-placeholder="Start writing your email…"
-          />
+          <EmailEditor v-show="!previewMode" v-model="editorHTML" :preview-mode="previewMode" @toggle-preview="previewMode = !previewMode" />
           <!-- Preview mode -->
           <div v-show="previewMode" class="preview-wrap">
-            <div class="preview-card">
-              <div class="preview-from">From: {{ form.from_name }} &lt;{{ form.from_email }}&gt;</div>
-              <div class="preview-subject">{{ form.subject || 'No subject yet' }}</div>
-              <div class="preview-preheader">{{ form.preview_text || 'No preview text' }}</div>
-              <div class="preview-body" v-html="editorHTML" />
+            <div class="preview-controls">
+              <div class="device-toggle">
+                <button class="device-btn" :class="{ active: previewDevice === 'desktop' }" @click="previewDevice = 'desktop'">
+                  <Monitor :size="13" />
+                  Desktop
+                </button>
+                <button class="device-btn" :class="{ active: previewDevice === 'mobile' }" @click="previewDevice = 'mobile'">
+                  <Smartphone :size="13" />
+                  Mobile
+                </button>
+              </div>
+              <button class="preview-edit-btn" @click="previewMode = false">
+                <Pencil :size="12" />
+                Edit
+              </button>
+            </div>
+
+            <div class="email-viewport" :class="`device-${previewDevice}`">
+              <div v-if="previewDevice === 'mobile'" class="phone-chrome">
+                <span class="phone-time">9:41</span>
+                <span class="phone-icons">··· ▲ ▮</span>
+              </div>
+              <div class="email-shell">
+                <div class="shell-meta">
+                  <div class="shell-from">From: {{ form.from_name }} &lt;{{ form.from_email }}&gt;</div>
+                  <div class="shell-subject">{{ form.subject || 'No subject yet' }}</div>
+                  <div class="shell-preheader">{{ form.preview_text || 'No preview text' }}</div>
+                </div>
+                <div class="shell-divider" />
+                <div class="email-body" v-html="previewEmailHTML" />
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Bottom action bar -->
         <div class="action-bar">
-          <p v-if="saveError" class="save-error">{{ saveError }}</p>
-          <div class="action-buttons">
+          <div class="action-left">
             <BaseButton variant="secondary" @click="saveDraft" :loading="saveLoading">
               <template v-if="saveSuccess">
                 <span class="saved-indicator">✓ Saved</span>
@@ -158,10 +147,15 @@
                 Save Draft
               </template>
             </BaseButton>
-            <BaseButton variant="secondary" @click="openSchedule" :disabled="!campaignId && saveLoading">
+            <BaseButton variant="secondary" @click="openSchedule" :disabled="!form.send_to_id">
               <CalendarDays :size="13" :stroke-width="2" />
               Schedule
             </BaseButton>
+            <p v-if="saveError" class="save-error">{{ saveError }}</p>
+          </div>
+          <div class="action-right">
+            <span v-if="sendPreflight" class="send-hint send-error-hint">{{ sendPreflight }}</span>
+            <span v-else-if="!form.send_to_id" class="send-hint">Select a list first</span>
             <BaseButton variant="primary" @click="openSendConfirm" :disabled="!form.send_to_id">
               <SendHorizonal :size="13" :stroke-width="2" />
               Send Now
@@ -170,20 +164,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Insert Link Modal -->
-    <BaseModal :show="showLinkModal" title="Insert Link" @close="closeLinkModal">
-      <form @submit.prevent="submitLink" class="form">
-        <div class="form-field">
-          <label class="field-label">URL</label>
-          <BaseInput v-model="linkUrl" ref="linkInputRef" placeholder="https://example.com" type="url" />
-        </div>
-        <div class="form-actions">
-          <BaseButton variant="ghost" type="button" @click="closeLinkModal">Cancel</BaseButton>
-          <BaseButton variant="primary" type="submit">Insert Link</BaseButton>
-        </div>
-      </form>
-    </BaseModal>
 
     <!-- Template Overwrite Confirmation Modal -->
     <BaseModal :show="showTemplateConfirm" title="Replace editor content?" @close="showTemplateConfirm = false">
@@ -201,6 +181,10 @@
     <!-- Schedule Modal -->
     <BaseModal :show="showSchedule" title="Schedule Campaign" @close="showSchedule = false">
       <form @submit.prevent="submitSchedule" class="form">
+        <div class="schedule-summary">
+          <p class="schedule-name">{{ form.name || 'Untitled campaign' }}</p>
+          <p class="schedule-meta">{{ form.subject || '(no subject)' }} &middot; {{ selectedTargetCount?.toLocaleString() ?? '?' }} subscriber{{ selectedTargetCount !== 1 ? 's' : '' }}</p>
+        </div>
         <div class="form-field">
           <label class="field-label">Send at <span class="required">*</span></label>
           <input
@@ -209,6 +193,7 @@
             class="datetime-input"
             :min="minDatetime"
           />
+          <span class="field-hint">Your local time ({{ localTimezoneLabel }})</span>
         </div>
         <p v-if="scheduleError" class="form-error">{{ scheduleError }}</p>
         <div class="form-actions">
@@ -226,6 +211,16 @@
           <strong>{{ selectedTargetCount?.toLocaleString() ?? '?' }}</strong>
           subscriber{{ selectedTargetCount !== 1 ? 's' : '' }}?
         </p>
+        <div class="confirm-summary">
+          <div class="summary-row">
+            <span class="summary-label">Subject</span>
+            <span class="summary-val">{{ form.subject || '(no subject)' }}</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">From</span>
+            <span class="summary-val">{{ form.from_name }} &lt;{{ form.from_email }}&gt;</span>
+          </div>
+        </div>
         <p class="confirm-sub">This action cannot be undone.</p>
         <p v-if="sendError" class="form-error">{{ sendError }}</p>
         <div class="form-actions">
@@ -241,13 +236,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Link2, List, Eye, CalendarDays, SendHorizonal } from 'lucide-vue-next'
+import { CalendarDays, SendHorizonal, Pencil, Monitor, Smartphone } from 'lucide-vue-next'
 import api from '@/lib/api'
 import BaseInput from '@/components/BaseInput.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
+import EmailEditor from '@/components/EmailEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -268,10 +264,11 @@ const form = ref({
 
 const lists = ref([])
 const tagsList = ref([])
+const installationURL = ref('')
 
-const editorRef = ref(null)
 const editorHTML = ref('')
 const previewMode = ref(false)
+const previewDevice = ref('desktop')
 const selectedTemplate = ref('blank')
 
 const saveLoading = ref(false)
@@ -286,10 +283,7 @@ const scheduleError = ref('')
 const showSendConfirm = ref(false)
 const sendLoading = ref(false)
 const sendError = ref('')
-
-const showLinkModal = ref(false)
-const linkUrl = ref('')
-let savedSelection = null
+const sendPreflight = ref('')
 
 const showTemplateConfirm = ref(false)
 const pendingTemplate = ref(null)
@@ -307,7 +301,7 @@ const pendingTemplateLabel = computed(() => {
 
 const TEMPLATE_HTML = {
   blank: '<p></p>',
-  newsletter: `<h2>Hello {{first_name | "there"}},</h2>
+  newsletter: `<h2>Hello {{first_name}},</h2>
 <p>Here's what's been happening this month.</p>
 <h3>What's new</h3>
 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
@@ -315,15 +309,23 @@ const TEMPLATE_HTML = {
 <p style="color:#888;font-size:13px">You're receiving this because you subscribed. <a href="{{unsubscribe_url}}">Unsubscribe</a></p>`,
   announcement: `<h2>Exciting news!</h2>
 <p>We're thrilled to share something special with you.</p>
-<p><a href="#" style="background:#10b981;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Learn More →</a></p>
+<p><a data-cta href="#" style="background:#10b981;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Learn More →</a></p>
 <hr />
 <p style="color:#888;font-size:13px">You're receiving this because you subscribed. <a href="{{unsubscribe_url}}">Unsubscribe</a></p>`,
 }
 
 const minDatetime = computed(() => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() + 5)
-  return now.toISOString().slice(0, 16)
+  const now = new Date(Date.now() + 5 * 60000)
+  const pad = n => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+})
+
+const localTimezoneLabel = computed(() => {
+  const offset = -new Date().getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const h = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
+  const m = String(Math.abs(offset) % 60).padStart(2, '0')
+  return `UTC${sign}${h}:${m}`
 })
 
 const selectedTargetCount = computed(() => {
@@ -337,46 +339,11 @@ const selectedTargetCount = computed(() => {
   }
 })
 
-function execCmd(cmd, value = null) {
-  document.execCommand(cmd, false, value)
-  editorRef.value?.focus()
-  syncEditorHTML()
-}
-
-function openLinkModal() {
-  // Save current selection so it survives the modal opening
-  const sel = window.getSelection()
-  savedSelection = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
-  linkUrl.value = ''
-  showLinkModal.value = true
-}
-
-function closeLinkModal() {
-  showLinkModal.value = false
-  linkUrl.value = ''
-  savedSelection = null
-}
-
-function submitLink() {
-  const url = linkUrl.value.trim()
-  if (!url) { closeLinkModal(); return }
-  showLinkModal.value = false
-  // Restore selection before executing command
-  if (savedSelection) {
-    const sel = window.getSelection()
-    sel.removeAllRanges()
-    sel.addRange(savedSelection)
-  }
-  editorRef.value?.focus()
-  document.execCommand('createLink', false, url)
-  syncEditorHTML()
-  savedSelection = null
-  linkUrl.value = ''
-}
+const previewEmailHTML = computed(() => toEmailHTML(editorHTML.value || '', installationURL.value))
 
 function confirmApplyTemplate(id) {
-  const currentContent = editorRef.value?.innerHTML?.trim()
-  const isEmpty = !currentContent || currentContent === '<p></p>' || currentContent === ''
+  const currentContent = editorHTML.value?.trim()
+  const isEmpty = !currentContent || currentContent === '<p></p>'
   if (!isEmpty && id !== selectedTemplate.value) {
     pendingTemplate.value = id
     showTemplateConfirm.value = true
@@ -393,18 +360,9 @@ function applyPendingTemplate() {
   }
 }
 
-function syncEditorHTML() {
-  if (editorRef.value) {
-    editorHTML.value = editorRef.value.innerHTML
-  }
-}
-
 function applyTemplate(id) {
   selectedTemplate.value = id
-  if (editorRef.value) {
-    editorRef.value.innerHTML = TEMPLATE_HTML[id] || ''
-    editorHTML.value = TEMPLATE_HTML[id] || ''
-  }
+  editorHTML.value = fromEmailHTML(TEMPLATE_HTML[id] || '')
 }
 
 async function loadSettings() {
@@ -414,6 +372,7 @@ async function loadSettings() {
     if (!form.value.from_name) form.value.from_name = s.from_name || ''
     if (!form.value.from_email) form.value.from_email = s.from_email || ''
     if (!form.value.reply_to) form.value.reply_to = s.reply_to || ''
+    if (s.installation_url) installationURL.value = s.installation_url.replace(/\/$/, '')
   } catch (e) {
     // non-critical
   }
@@ -448,21 +407,121 @@ async function loadCampaign() {
       send_to_type: c.send_to_type || 'list',
       send_to_id: c.send_to_id?.String || c.send_to_id || '',
     }
-    await nextTick()
-    if (editorRef.value) {
-      editorRef.value.innerHTML = c.html_body || ''
-      editorHTML.value = c.html_body || ''
-    }
+    editorHTML.value = fromEmailHTML(c.html_body || '')
   } catch (e) {
     console.error('load campaign error', e)
   }
 }
 
-async function saveDraft() {
-  saveError.value = ''
-  saveSuccess.value = false
-  if (editorRef.value) syncEditorHTML()
+function toEmailHTML(html, baseURL = '') {
+  if (!html) return ''
 
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const body = doc.body
+
+  // Variable chips → {{var}}
+  body.querySelectorAll('span[data-variable]').forEach(el => {
+    el.replaceWith(`{{${el.getAttribute('data-variable')}}}`)
+  })
+
+  // Headings: inline font/spacing (email clients strip <style> blocks)
+  const HEADING_STYLES = {
+    H1: 'font-size:28px;font-weight:700;margin:0 0 16px 0;line-height:1.2;',
+    H2: 'font-size:22px;font-weight:700;margin:0 0 14px 0;line-height:1.3;',
+    H3: 'font-size:18px;font-weight:600;margin:0 0 12px 0;line-height:1.4;',
+  }
+  body.querySelectorAll('h1, h2, h3').forEach(el => {
+    el.setAttribute('style', HEADING_STYLES[el.tagName])
+  })
+
+  // Paragraphs: margin only (preserve existing color/size on template footer paragraphs)
+  body.querySelectorAll('p').forEach(el => {
+    if (!el.closest('li') && !el.style.margin) el.style.margin = '0 0 12px 0'
+  })
+
+  // Bullet lists: padding-left for Outlook (ignores CSS-only indent)
+  body.querySelectorAll('ul').forEach(el => {
+    el.setAttribute('style', 'padding:0 0 0 20px;margin:0 0 14px 0;')
+  })
+
+  // Ordered lists: same treatment as bullet lists
+  body.querySelectorAll('ol').forEach(el => {
+    el.setAttribute('style', 'padding:0 0 0 20px;margin:0 0 14px 0;list-style-type:decimal;')
+  })
+
+  // List items: unwrap the <p> Tiptap nests inside each <li> (causes double-spacing in Gmail/Yahoo)
+  body.querySelectorAll('li > p').forEach(p => {
+    const parent = p.parentNode
+    while (p.firstChild) parent.insertBefore(p.firstChild, p)
+    parent.removeChild(p)
+  })
+
+  // Links: inline color so Yahoo/Android Mail don't override with their defaults
+  body.querySelectorAll('a[href]').forEach(el => {
+    if (!el.style.color) el.style.color = '#10b981'
+    if (!el.style.textDecoration) el.style.textDecoration = 'underline'
+  })
+
+  // HR: flat border (Outlook renders plain <hr> as a 3D embossed rule)
+  body.querySelectorAll('hr').forEach(el => {
+    el.setAttribute('style', 'border:none;border-top:1px solid #e5e7eb;margin:24px 0;')
+  })
+
+  // Images: email-safe inline styles. When baseURL is provided (preview pane), convert
+  // root-relative src paths to absolute so the browser can fetch them.
+  body.querySelectorAll('img').forEach(el => {
+    if (baseURL && el.getAttribute('src')?.startsWith('/')) {
+      el.setAttribute('src', baseURL + el.getAttribute('src'))
+    }
+    el.style.maxWidth = '100%'
+    el.style.height = 'auto'
+    el.style.display = 'block'
+    if (!el.style.margin) el.style.margin = '0 auto 12px'
+  })
+
+  return body.innerHTML
+}
+
+function fromEmailHTML(html) {
+  if (!html) return html
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+
+  // Mark old-style inline-block links as CTA buttons so Tiptap's parseHTML rule can rehydrate them
+  doc.body.querySelectorAll('a[href]').forEach(el => {
+    const bg = el.style.background || el.style.backgroundColor
+    if (el.style.display === 'inline-block' && bg) el.setAttribute('data-cta', '')
+  })
+
+  const pattern = /\{\{([a-z_]+)\}\}/g
+
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      pattern.lastIndex = 0
+      if (!pattern.test(node.textContent)) return
+      pattern.lastIndex = 0
+      const frag = document.createDocumentFragment()
+      let last = 0, match
+      while ((match = pattern.exec(node.textContent)) !== null) {
+        if (match.index > last) frag.appendChild(document.createTextNode(node.textContent.slice(last, match.index)))
+        const span = document.createElement('span')
+        span.setAttribute('data-variable', match[1])
+        span.className = 'variable-chip'
+        span.textContent = `{{${match[1]}}}`
+        frag.appendChild(span)
+        last = match.index + match[0].length
+      }
+      if (last < node.textContent.length) frag.appendChild(document.createTextNode(node.textContent.slice(last)))
+      node.replaceWith(frag)
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      Array.from(node.childNodes).forEach(walk)
+    }
+  }
+
+  walk(doc.body)
+  return doc.body.innerHTML
+}
+
+async function doSave() {
   const payload = {
     name: form.value.name.trim(),
     subject: form.value.subject.trim(),
@@ -470,20 +529,25 @@ async function saveDraft() {
     from_name: form.value.from_name.trim(),
     from_email: form.value.from_email.trim(),
     reply_to: form.value.reply_to.trim(),
-    html_body: editorRef.value?.innerHTML || '',
+    html_body: toEmailHTML(editorHTML.value || ''),
     send_to_type: form.value.send_to_type,
     send_to_id: form.value.send_to_id || '',
   }
+  if (campaignId.value) {
+    await api.put(`/api/campaigns/${campaignId.value}`, payload)
+  } else {
+    const res = await api.post('/api/campaigns', payload)
+    campaignId.value = res.data.id?.String || res.data.id
+    router.replace(`/campaigns/${campaignId.value}/edit`)
+  }
+}
 
+async function saveDraft() {
+  saveError.value = ''
+  saveSuccess.value = false
   saveLoading.value = true
   try {
-    if (campaignId.value) {
-      await api.put(`/api/campaigns/${campaignId.value}`, payload)
-    } else {
-      const res = await api.post('/api/campaigns', payload)
-      campaignId.value = res.data.id?.String || res.data.id
-      router.replace(`/campaigns/${campaignId.value}/edit`)
-    }
+    await doSave()
     saveSuccess.value = true
     setTimeout(() => { saveSuccess.value = false }, 2500)
   } catch (e) {
@@ -502,6 +566,10 @@ function openSchedule() {
 
 async function submitSchedule() {
   scheduleError.value = ''
+  if (!form.value.send_to_id) {
+    scheduleError.value = 'Select a recipient list or tag before scheduling.'
+    return
+  }
   if (!scheduleAt.value) {
     scheduleError.value = 'Please select a date and time.'
     return
@@ -509,13 +577,7 @@ async function submitSchedule() {
 
   scheduleLoading.value = true
   try {
-    if (!campaignId.value) {
-      await saveDraft()
-      if (!campaignId.value) {
-        scheduleError.value = 'Please save the campaign first.'
-        return
-      }
-    }
+    await doSave()
     const iso = new Date(scheduleAt.value).toISOString()
     await api.post(`/api/campaigns/${campaignId.value}/schedule`, { scheduled_at: iso })
     showSchedule.value = false
@@ -529,23 +591,32 @@ async function submitSchedule() {
 }
 
 function openSendConfirm() {
+  sendPreflight.value = ''
   sendError.value = ''
+  if (!form.value.name.trim()) {
+    sendPreflight.value = 'Campaign name is required.'
+    return
+  }
+  if (!form.value.subject.trim()) {
+    sendPreflight.value = 'Subject line is required.'
+    return
+  }
   showSendConfirm.value = true
 }
 
 async function submitSend() {
   sendError.value = ''
+  if (!form.value.name.trim()) {
+    sendError.value = 'Campaign name is required before sending.'
+    return
+  }
+  if (!form.value.subject.trim()) {
+    sendError.value = 'Subject line is required before sending.'
+    return
+  }
   sendLoading.value = true
   try {
-    if (!campaignId.value) {
-      await saveDraft()
-      if (!campaignId.value) {
-        sendError.value = 'Please save the campaign first.'
-        return
-      }
-    } else {
-      await saveDraft()
-    }
+    await doSave()
     await api.post(`/api/campaigns/${campaignId.value}/send`)
     showSendConfirm.value = false
     router.push('/campaigns')
@@ -569,15 +640,7 @@ onMounted(async () => {
     await loadCampaign()
   } else {
     await loadSettings()
-    await nextTick()
-    if (editorRef.value) {
-      editorRef.value.innerHTML = TEMPLATE_HTML.blank
-      editorHTML.value = TEMPLATE_HTML.blank
-    }
-  }
-
-  if (editorRef.value) {
-    editorRef.value.addEventListener('input', syncEditorHTML)
+    editorHTML.value = TEMPLATE_HTML.blank
   }
 })
 </script>
@@ -587,7 +650,6 @@ onMounted(async () => {
   padding: 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   height: calc(100vh - var(--topbar-height));
   box-sizing: border-box;
 }
@@ -596,6 +658,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #faf9f7;
   flex-shrink: 0;
 }
 
@@ -739,87 +804,8 @@ onMounted(async () => {
   min-height: 0;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f0ede6;
-  background: #faf9f7;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
-.tb-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #e8e5de;
-  border-radius: 5px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  color: #555;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 120ms;
-}
-
-.tb-btn:hover {
-  background: #f0ede6;
-}
-
-.tb-pill {
-  padding: 4px 8px;
-  border: 1px solid #e8e5de;
-  border-radius: 5px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  color: #555;
-  font-family: inherit;
-  transition: background 120ms;
-}
-
-.tb-pill:hover {
-  background: #f0ede6;
-}
-
-.toolbar-sep {
-  width: 1px;
-  height: 20px;
-  background: #e8e5de;
-  margin: 0 4px;
-}
-
-.toolbar-spacer {
-  flex: 1;
-}
-
-.preview-toggle {
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid #e8e5de;
-  background: #fff;
-  color: #555;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: inherit;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  transition: background 120ms;
-}
-
-.preview-toggle:hover {
-  background: #f0ede6;
-}
-
 .editor-content {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
 }
 
@@ -828,72 +814,164 @@ onMounted(async () => {
   padding: 24px;
 }
 
-.editor-area {
-  min-height: 400px;
-  outline: none;
-  padding: 24px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #222;
-  font-family: 'DM Sans', sans-serif;
-}
-
-.editor-area:focus {
-  outline: none;
-}
-
-/* Placeholder shown when editor is empty */
-.editor-area:empty:before {
-  content: attr(data-placeholder);
-  color: #bbb;
-  pointer-events: none;
-  display: block;
-}
-
 .preview-wrap {
-  padding: 24px;
+  padding: 20px 24px 24px;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
-.preview-card {
-  max-width: 600px;
-  margin: 0 auto;
-  background: #fff;
-  border-radius: 8px;
-  padding: 32px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-}
-
-.preview-from {
-  font-size: 12px;
-  color: #aaa;
+.preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 16px;
 }
 
-.preview-subject {
+.device-toggle {
+  display: flex;
+  gap: 3px;
+  background: #e8e5de;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.device-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 120ms;
+}
+
+.device-btn.active {
+  background: #fff;
+  color: #333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.preview-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid #e8e5de;
+  border-radius: 6px;
+  background: #fff;
+  color: #555;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.preview-edit-btn:hover {
+  background: #f0ede6;
+}
+
+.email-viewport {
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.device-desktop {
+  max-width: 600px;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.device-mobile {
+  max-width: 375px;
+  border: 8px solid #1e1e1e;
+  border-radius: 40px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+}
+
+.phone-chrome {
+  background: #1e1e1e;
+  color: #fff;
+  font-size: 11px;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.phone-time {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.phone-icons {
+  opacity: 0.85;
+  letter-spacing: 2px;
+}
+
+.email-shell {
+  background: #fff;
+}
+
+.shell-meta {
+  padding: 20px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.shell-from {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.shell-subject {
   font-size: 18px;
   font-weight: 700;
-  margin-bottom: 6px;
   font-family: Georgia, serif;
   color: #111;
 }
 
-.preview-preheader {
-  color: #aaa;
+.shell-preheader {
   font-size: 12px;
-  margin-bottom: 24px;
+  color: #aaa;
 }
 
-.preview-body {
+.shell-divider {
+  height: 1px;
+  background: #eee;
+  margin: 0 24px;
+}
+
+.email-body {
+  padding: 24px;
   font-family: Georgia, serif;
+  font-size: 14px;
   line-height: 1.7;
   color: #333;
-  font-size: 14px;
+}
+
+:deep(.email-body .variable-chip) {
+  display: inline;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #059669;
+  font-size: 11px;
+  font-family: 'DM Mono', 'Courier New', monospace;
 }
 
 .action-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid #f0ede6;
@@ -901,16 +979,32 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.action-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.action-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .save-error {
   font-size: 12px;
   color: #dc2626;
   margin: 0;
-  flex: 1;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 8px;
+.send-hint {
+  font-size: 11px;
+  color: #aaa;
+}
+
+.send-error-hint {
+  color: #dc2626;
 }
 
 .saved-indicator {
@@ -975,5 +1069,54 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+.confirm-summary {
+  background: #f9f8f5;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.summary-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.summary-label {
+  color: #999;
+  min-width: 46px;
+  flex-shrink: 0;
+}
+
+.summary-val {
+  color: #333;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.schedule-summary {
+  background: #f9f8f5;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.schedule-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 3px 0;
+}
+
+.schedule-meta {
+  font-size: 12px;
+  color: #888;
+  margin: 0;
 }
 </style>

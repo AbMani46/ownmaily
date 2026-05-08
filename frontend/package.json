@@ -17,7 +17,31 @@
     "typescript": "~6.0.2",
     "vite": "^8.0.10"
   },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "cpu": [
+        "x64",
+        "arm64"
+      ],
+      "libc": [
+        "glibc",
+        "musl"
+      ]
+    }
+  },
   "dependencies": {
+    "@tiptap/core": "^3.22.5",
+    "@tiptap/extension-image": "^3.22.5",
+    "@tiptap/extension-link": "^3.22.5",
+    "@tiptap/extension-placeholder": "^3.22.5",
+    "@tiptap/extension-underline": "^3.22.5",
+    "@tiptap/pm": "^3.22.5",
+    "@tiptap/starter-kit": "^3.22.5",
+    "@tiptap/vue-3": "^3.22.5",
     "@vueuse/core": "^14.2.1",
     "axios": "^1.15.2",
     "lucide-vue-next": "^1.0.0",

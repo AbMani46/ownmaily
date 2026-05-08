@@ -404,6 +404,17 @@ func (h *SubscriberHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional list targeting — if provided, imported (and existing duplicate) subscribers are added to the list.
+	var targetListID *pgtype.UUID
+	if listIDStr := r.FormValue("list_id"); listIDStr != "" {
+		id, parseErr := parseUUID(listIDStr)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid list_id")
+			return
+		}
+		targetListID = &id
+	}
+
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "missing file field")
@@ -433,6 +444,16 @@ func (h *SubscriberHandler) Import(w http.ResponseWriter, r *http.Request) {
 	if emailIdx == -1 {
 		writeError(w, http.StatusBadRequest, "invalid_csv", "CSV must have an email column")
 		return
+	}
+
+	addToList := func(subID pgtype.UUID) {
+		if targetListID == nil {
+			return
+		}
+		_ = h.db.AddSubscriberToList(r.Context(), db.AddSubscriberToListParams{
+			ListID:       *targetListID,
+			SubscriberID: subID,
+		})
 	}
 
 	var imported, skipped, invalid int
@@ -472,7 +493,7 @@ func (h *SubscriberHandler) Import(w http.ResponseWriter, r *http.Request) {
 			lastName = strings.TrimSpace(row[lastIdx])
 		}
 
-		_, createErr := h.db.CreateSubscriber(r.Context(), db.CreateSubscriberParams{
+		sub, createErr := h.db.CreateSubscriber(r.Context(), db.CreateSubscriberParams{
 			Email:     email,
 			FirstName: firstName,
 			LastName:  lastName,
@@ -482,12 +503,19 @@ func (h *SubscriberHandler) Import(w http.ResponseWriter, r *http.Request) {
 		if createErr != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(createErr, &pgErr) && pgErr.Code == "23505" {
+				// Subscriber exists — still add them to the target list if requested.
+				if targetListID != nil {
+					if existing, lookupErr := h.db.GetSubscriberByEmail(r.Context(), email); lookupErr == nil {
+						addToList(existing.ID)
+					}
+				}
 				skipped++
 			} else {
 				skipped++
 			}
 			continue
 		}
+		addToList(sub.ID)
 		imported++
 	}
 
