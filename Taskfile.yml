@@ -97,3 +97,10 @@ tasks:
       - docker build -t knobbly007/ownmaily:latest -t knobbly007/ownmaily:{{.SHA}} .
       - docker push knobbly007/ownmaily:latest
       - docker push knobbly007/ownmaily:{{.SHA}}
+
+  main-c:
+    desc: Pull from github and ensure dockerhub is updated as well
+    cmds:
+      - git checkout main && git pull
+      - task docker-push
+      - git checkout web
