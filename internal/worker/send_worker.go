@@ -96,6 +96,11 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 		}
 	}
 
+	installationURL := w.installationURL
+	if s, err := w.db.GetSettings(ctx); err == nil && s.InstallationUrl != "" {
+		installationURL = s.InstallationUrl
+	}
+
 	const batchSize = 100
 	offset := int32(0)
 	for {
@@ -131,7 +136,7 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 				continue
 			}
 
-			msg := BuildMessage(campaign, sub, w.installationURL, w.appSecret)
+			msg := BuildMessage(campaign, sub, installationURL, w.appSecret)
 			if err := w.mailerStore.Get().Send(msg); err != nil {
 				log.Printf("send worker: send to %s: %v", sub.Email, err)
 				_ = w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{

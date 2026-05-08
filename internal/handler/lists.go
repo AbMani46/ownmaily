@@ -390,6 +390,52 @@ func (h *ListHandler) RemoveSubscriber(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *ListHandler) BulkAddSubscribers(w http.ResponseWriter, r *http.Request) {
+	listID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid list id")
+		return
+	}
+
+	if _, err := h.db.GetListByID(r.Context(), listID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "list not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		return
+	}
+
+	var body struct {
+		SubscriberIDs []string `json:"subscriber_ids"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	if len(body.SubscriberIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "subscriber_ids is required and must be non-empty")
+		return
+	}
+
+	var added int
+	for _, sidStr := range body.SubscriberIDs {
+		subID, parseErr := parseUUID(sidStr)
+		if parseErr != nil {
+			continue
+		}
+		if err := h.db.AddSubscriberToList(r.Context(), db.AddSubscriberToListParams{
+			ListID:       listID,
+			SubscriberID: subID,
+		}); err == nil {
+			added++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"added": added})
+}
+
 func (h *ListHandler) ConfirmOptIn(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	sidStr := r.URL.Query().Get("sid")

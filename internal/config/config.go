@@ -10,6 +10,7 @@ type Config struct {
 	AppSecret       string
 	InstallationURL string
 	Port            string
+	UploadDir       string
 }
 
 func Load() (*Config, error) {
@@ -33,10 +34,16 @@ func Load() (*Config, error) {
 		installURL = "http://localhost:4400"
 	}
 
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+
 	return &Config{
 		DBUrl:           dbUrl,
 		AppSecret:       appSecret,
 		InstallationURL: installURL,
 		Port:            port,
+		UploadDir:       uploadDir,
 	}, nil
 }

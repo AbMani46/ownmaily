@@ -98,12 +98,35 @@
           <template v-else-if="currentStep === 3">
             <div class="form-fields">
               <div class="field">
+                <label>From name</label>
+                <input v-model="smtp.from_name" type="text" placeholder="My Newsletter" />
+              </div>
+              <div class="field">
+                <label>From email</label>
+                <input v-model="smtp.from_email" type="email" placeholder="hello@yourdomain.com" @input="smtpTested = false" />
+                <div v-if="smtpFromDomain" class="domain-hint">
+                  Sending from: <strong>{{ smtpFromDomain }}</strong> -- Make sure this domain is verified with your SMTP provider before testing.
+                </div>
+              </div>
+
+              <div class="field">
                 <label>SMTP provider</label>
                 <select v-model="smtp.provider" @change="smtpTested = false">
                   <option value="resend">Resend</option>
                   <option value="mailgun">Mailgun</option>
                   <option value="ses">Amazon SES</option>
                 </select>
+                <div v-if="smtp.provider" class="provider-hint">
+                  <template v-if="smtp.provider === 'resend'">
+                    Resend requires your from email to use a domain you have verified in your Resend dashboard. For example, if you verified yourdomain.com, your from email must be you@yourdomain.com. Using an unverified domain will cause the test to fail with a 403 error.
+                  </template>
+                  <template v-else-if="smtp.provider === 'mailgun'">
+                    Mailgun requires your from email to use a domain you have added and verified in Mailgun. Check your Mailgun dashboard under Sending Domains.
+                  </template>
+                  <template v-else-if="smtp.provider === 'ses'">
+                    SES requires your from email to use a domain or email address you have verified in the SES console. New accounts in sandbox mode can only send from verified addresses.
+                  </template>
+                </div>
               </div>
 
               <template v-if="smtp.provider === 'resend'">
@@ -150,7 +173,7 @@
               <transition name="fade">
                 <div v-if="testEmailSent" class="test-success">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Check your inbox — test email sent!
+                  Check your inbox -- test email sent!
                 </div>
               </transition>
             </div>
@@ -166,25 +189,27 @@
             {{ currentStep === 0 ? 'Back to login' : '← Previous' }}
           </button>
           <div class="footer-right">
-            <span v-if="currentStep === 3 && !smtpTested" class="continue-hint">
-              Test your connection or skip and configure SMTP later in Settings.
+            <div class="footer-btns">
+              <button
+                v-if="currentStep === 3 || currentStep === 4"
+                class="btn-ghost"
+                @click="skipStep"
+              >
+                Skip for now
+              </button>
+              <button
+                class="btn-primary"
+                :disabled="nextDisabled || stepLoading"
+                @click="goNext"
+              >
+                <span v-if="stepLoading" class="loading-dots">…</span>
+                <span v-else-if="currentStep === steps.length - 1">Finish Setup</span>
+                <span v-else>Continue →</span>
+              </button>
+            </div>
+            <span v-if="currentStep === 3 || currentStep === 4" class="continue-hint">
+              You can configure SMTP later in Settings. You will need it before sending your first campaign.
             </span>
-            <button
-              v-if="currentStep === 3 || currentStep === 4"
-              class="btn-ghost"
-              @click="skipStep"
-            >
-              Skip for now
-            </button>
-            <button
-              class="btn-primary"
-              :disabled="nextDisabled || stepLoading"
-              @click="goNext"
-            >
-              <span v-if="stepLoading" class="loading-dots">…</span>
-              <span v-else-if="currentStep === steps.length - 1">Finish Setup</span>
-              <span v-else>Continue →</span>
-            </button>
           </div>
         </div>
       </div>
@@ -223,7 +248,7 @@ export default {
       timezone: 'UTC',
       physical_address: '',
     })
-    const smtp = ref({ provider: 'resend', api_key: '', domain: '', region: 'US', access_key_id: '', secret_access_key: '' })
+    const smtp = ref({ provider: 'resend', from_email: '', from_name: '', api_key: '', domain: '', region: 'US', access_key_id: '', secret_access_key: '' })
     const testEmail = ref('')
     const testEmailSent = ref(false)
     const sendingTest = ref(false)
@@ -244,6 +269,12 @@ export default {
     const passwordMismatch = computed(() =>
       owner.value.confirm.length > 0 && owner.value.password !== owner.value.confirm
     )
+
+    const smtpFromDomain = computed(() => {
+      const email = smtp.value.from_email
+      if (!email || !email.includes('@')) return ''
+      return email.split('@')[1] || ''
+    })
 
     const nextDisabled = computed(() => false)
 
@@ -269,19 +300,33 @@ export default {
       stepError.value = ''
 
       if (!owner.value.email) {
-        smtpTestResult.value = 'Owner email not set — go back to step 2 and enter your email address before testing.'
+        smtpTestResult.value = 'Owner email not set -- go back to step 2 and enter your email address before testing.'
         return
       }
 
       testingSmtp.value = true
       try {
-        // Save SMTP first, then send a test to the owner's email
-        await api.put('/api/setup/smtp', { provider: smtp.value.provider, credentials: buildSmtpCredentials() })
+        await api.put('/api/setup/smtp', {
+          provider: smtp.value.provider,
+          from_email: smtp.value.from_email,
+          from_name: smtp.value.from_name,
+          credentials: buildSmtpCredentials(),
+        })
         await api.post('/api/setup/test-smtp', { to: owner.value.email })
         smtpTested.value = true
-        smtpTestResult.value = `Connection successful — test email sent to ${owner.value.email}!`
+        smtpTestResult.value = `Connection successful -- test email sent to ${owner.value.email}!`
       } catch (e) {
-        smtpTestResult.value = e.response?.data?.message || 'Connection failed. Check your credentials.'
+        const raw = e.response?.data?.message || 'Connection failed.'
+        const msg = raw.toLowerCase()
+        if (msg.includes('403') || msg.includes('domain') || msg.includes('not verified')) {
+          smtpTestResult.value = 'Your sending domain is not verified with your provider. Make sure the domain in your from email is verified in your provider dashboard. See the setup guide at ownmaily.com/docs/smtp'
+        } else if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('invalid')) {
+          smtpTestResult.value = 'Your API key looks incorrect. Double check it in your provider dashboard.'
+        } else if (msg.includes('timeout') || msg.includes('connection')) {
+          smtpTestResult.value = 'Could not reach your provider. Check your internet connection and try again.'
+        } else {
+          smtpTestResult.value = `${raw} -- Check the docs at ownmaily.com/docs/smtp if this persists.`
+        }
       } finally {
         testingSmtp.value = false
       }
@@ -318,6 +363,13 @@ export default {
             timezone: general.value.timezone,
             physical_address: general.value.physical_address,
           })
+        } else if (currentStep.value === 3) {
+          await api.put('/api/setup/smtp', {
+            provider: smtp.value.provider,
+            from_email: smtp.value.from_email,
+            from_name: smtp.value.from_name,
+            credentials: buildSmtpCredentials(),
+          })
         } else if (currentStep.value === 4) {
           // Finish setup
           const { data } = await api.post('/api/setup/complete')
@@ -345,7 +397,7 @@ export default {
     return {
       currentStep, stepLoading, stepError, steps,
       owner, general, smtp, testEmail, testEmailSent, sendingTest,
-      smtpTested, testingSmtp, smtpTestResult,
+      smtpTested, testingSmtp, smtpTestResult, smtpFromDomain,
       timezones, passwordMismatch, nextDisabled,
       goNext, goBack, skipStep, testSmtp, sendTestEmail,
     }
@@ -693,6 +745,13 @@ export default {
 
 .footer-right {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.footer-btns {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
@@ -707,4 +766,26 @@ export default {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
 .step-body { min-height: 180px; }
+
+.provider-hint {
+  margin-top: 6px;
+  padding: 9px 12px;
+  background: #f0f6ff;
+  border: 1px solid #c7dcf8;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #374e6e;
+  line-height: 1.55;
+}
+
+.domain-hint {
+  margin-top: 5px;
+  padding: 7px 11px;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.5;
+}
 </style>

@@ -40,15 +40,17 @@ tasks:
       vars:
         - NAME
 
-  docker-up:
-    desc: Start Docker Compose services in the background
+  docker-dev:
+    desc: Start dev Docker Compose services in the background
     cmds:
-      - docker compose up -d
+      - task docker-down
+      - docker compose -f docker-compose.dev.yml up -d --build
+      - task migrate-up
 
   docker-down:
-    desc: Stop and remove Docker Compose services
+    desc: Stop and remove dev Docker Compose services
     cmds:
-      - docker compose down
+      - docker compose -f docker-compose.dev.yml down
 
   psql:
     desc: Open a psql shell to the dev database
@@ -76,7 +78,7 @@ tasks:
       - docker build -t ownmaily/ownmaily:latest .
 
   docker-run:
-    desc: Run production image locally
+    desc: Run production image locally (pulls from Docker Hub)
     cmds:
       - docker compose -f docker-compose.yml up -d
 

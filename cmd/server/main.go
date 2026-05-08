@@ -67,6 +67,8 @@ func main() {
 	trackingHandler := handler.NewTrackingHandler(queries, cfg.AppSecret)
 	analyticsHandler := handler.NewAnalyticsHandler(queries)
 	settingsHandler := handler.NewSettingsHandler(queries, mailerStore)
+	uploadStorage := handler.NewLocalStorage(cfg.UploadDir + "/images")
+	uploadHandler := handler.NewUploadHandler(uploadStorage)
 
 	r := chi.NewRouter()
 	r.Use(setupGuard(queries))
@@ -99,6 +101,12 @@ func main() {
 	r.Get("/embed/{listID}.js", embedHandler.ServeJS)
 	r.Post("/api/public/subscribe", embedHandler.Subscribe)
 
+	// Uploaded images are publicly accessible so email clients can fetch them.
+	uploadDir := cfg.UploadDir
+	r.Get("/uploads/*", func(w http.ResponseWriter, r *http.Request) {
+		http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))).ServeHTTP(w, r)
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.AppSecret, queries))
 
@@ -122,6 +130,7 @@ func main() {
 		r.Delete("/api/lists/{id}", listHandler.Delete)
 		r.Get("/api/lists/{id}/subscribers", listHandler.ListSubscribers)
 		r.Post("/api/lists/{id}/subscribers", listHandler.AddSubscriber)
+		r.Post("/api/lists/{id}/subscribers/bulk", listHandler.BulkAddSubscribers)
 		r.Delete("/api/lists/{id}/subscribers/{subscriberID}", listHandler.RemoveSubscriber)
 
 		r.Get("/api/tags", tagHandler.List)
@@ -145,6 +154,8 @@ func main() {
 
 		r.Get("/api/analytics/overview", analyticsHandler.Overview)
 		r.Get("/api/subscribers/{id}/stats", subscriberHandler.Stats)
+
+		r.Post("/api/uploads/images", uploadHandler.UploadImage)
 
 		r.Get("/api/settings", settingsHandler.Get)
 		r.Put("/api/settings/general", settingsHandler.UpdateGeneral)
@@ -201,6 +212,7 @@ func setupGuard(queries *db2.Queries) func(http.Handler) http.Handler {
 				strings.HasPrefix(path, "/confirm") ||
 				strings.HasPrefix(path, "/webhooks/") ||
 				strings.HasPrefix(path, "/embed/") ||
+				strings.HasPrefix(path, "/uploads/") ||
 				strings.HasPrefix(path, "/assets/") ||
 				path == "/favicon.ico" ||
 				path == "/favicon.svg" ||

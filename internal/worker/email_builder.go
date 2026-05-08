@@ -2,12 +2,16 @@ package worker
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	db "github.com/AbMani46/ownmaily/internal/sqlc"
 	"github.com/AbMani46/ownmaily/internal/tracking"
 )
+
+// relativeImgSrc matches src attributes on img tags that point to /uploads/ paths.
+var relativeImgSrc = regexp.MustCompile(`(<img\s[^>]*src=")(/uploads/[^"]+)(")`)
 
 func BuildMessage(campaign db.Campaign, subscriber db.Subscriber, installationURL, appSecret string) mailer.Message {
 	unsubToken := tracking.GenerateUnsubscribeToken(subscriber.ID, campaign.ID, appSecret)
@@ -20,6 +24,12 @@ func BuildMessage(campaign db.Campaign, subscriber db.Subscriber, installationUR
 	}
 
 	htmlBody := replaceVars(campaign.HtmlBody)
+
+	// Absolutize root-relative image src paths (/uploads/images/...) using the current
+	// installationURL from settings. Stored paths are relative so changing the domain
+	// doesn't break old campaigns.
+	base := strings.TrimRight(installationURL, "/")
+	htmlBody = relativeImgSrc.ReplaceAllString(htmlBody, "${1}"+base+"${2}${3}")
 
 	rewritten, _ := tracking.RewriteLinks(htmlBody, installationURL, appSecret, subscriber.ID, campaign.ID)
 	htmlBody = rewritten
