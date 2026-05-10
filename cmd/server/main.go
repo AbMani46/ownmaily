@@ -99,6 +99,7 @@ func main() {
 	r.Post("/webhooks/ses", webhookHandler.SES)
 
 	r.Get("/embed/{listID}.js", embedHandler.ServeJS)
+	r.Options("/api/public/subscribe", embedHandler.Subscribe)
 	r.Post("/api/public/subscribe", embedHandler.Subscribe)
 
 	// Uploaded images are publicly accessible so email clients can fetch them.
