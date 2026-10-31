@@ -101,13 +101,14 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 		installationURL = s.InstallationUrl
 	}
 
+	// Sent and failed rows leave the pending set, so always read from offset 0.
+	// Every recipient must move out of 'pending' or this loop would never end.
 	const batchSize = 100
-	offset := int32(0)
 	for {
 		batch, err := w.db.ListPendingRecipients(ctx, db.ListPendingRecipientsParams{
 			CampaignID: campaign.ID,
 			Limit:      batchSize,
-			Offset:     offset,
+			Offset:     0,
 		})
 		if err != nil {
 			return w.failJob(ctx, job.ID, campaign.ID, "list pending recipients: "+err.Error())
@@ -120,12 +121,14 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 			sub, err := w.db.GetSubscriberByID(ctx, recipient.SubscriberID)
 			if err != nil {
 				log.Printf("send worker: get subscriber %s: %v", recipient.SubscriberID.String(), err)
-				_ = w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
+				if err := w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
 					CampaignID:   campaign.ID,
 					SubscriberID: recipient.SubscriberID,
 					Status:       "failed",
 					SentAt:       pgtype.Timestamptz{},
-				})
+				}); err != nil {
+					return w.failJob(ctx, job.ID, campaign.ID, "update recipient status: "+err.Error())
+				}
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
 				if err := w.limiter.Wait(ctx); err != nil {
 					if ctx.Err() != nil {
@@ -139,12 +142,14 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 			msg := BuildMessage(campaign, sub, installationURL, w.appSecret)
 			if err := w.mailerStore.Get().Send(msg); err != nil {
 				log.Printf("send worker: send to %s: %v", sub.Email, err)
-				_ = w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
+				if err := w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
 					CampaignID:   campaign.ID,
 					SubscriberID: sub.ID,
 					Status:       "failed",
 					SentAt:       pgtype.Timestamptz{},
-				})
+				}); err != nil {
+					return w.failJob(ctx, job.ID, campaign.ID, "update recipient status: "+err.Error())
+				}
 				_ = w.db.IncrementFailedCount(ctx, job.ID)
 				if err := w.limiter.Wait(ctx); err != nil {
 					if ctx.Err() != nil {
@@ -155,12 +160,14 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 				continue
 			}
 
-			_ = w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
+			if err := w.db.UpdateRecipientStatus(ctx, db.UpdateRecipientStatusParams{
 				CampaignID:   campaign.ID,
 				SubscriberID: sub.ID,
 				Status:       "sent",
 				SentAt:       pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			})
+			}); err != nil {
+				return w.failJob(ctx, job.ID, campaign.ID, "update recipient status: "+err.Error())
+			}
 			_ = w.db.IncrementSentCount(ctx, job.ID)
 			if err := w.limiter.Wait(ctx); err != nil {
 				if ctx.Err() != nil {
@@ -173,7 +180,6 @@ func (w *SendWorker) processJob(ctx context.Context, job db.SendJob) error {
 		if len(batch) < batchSize {
 			break
 		}
-		offset += batchSize
 	}
 
 	if err := w.db.UpdateSendJobStatus(ctx, db.UpdateSendJobStatusParams{
