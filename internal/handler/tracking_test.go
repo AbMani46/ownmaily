@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	sqlc "github.com/AbMani46/ownmaily/internal/sqlc"
@@ -203,7 +204,7 @@ func TestClickRedirect_MissingURL_Returns400(t *testing.T) {
 	testutil.AssertStatus(t, resp, http.StatusBadRequest)
 }
 
-func TestUnsubscribe_ValidToken(t *testing.T) {
+func TestUnsubscribe_OneClickPost(t *testing.T) {
 	pool, db, cleanup := testutil.NewTestDB(t)
 	t.Cleanup(cleanup)
 	srv, srvCleanup := testutil.NewTestServer(t, db, pool)
@@ -216,9 +217,9 @@ func TestUnsubscribe_ValidToken(t *testing.T) {
 
 	token := tracking.GenerateUnsubscribeToken(sub.ID, campaign.ID, testutil.TestAppSecret)
 
-	resp, err := http.Get(srv.URL + "/unsubscribe?token=" + token)
+	resp, err := postOneClickUnsubscribe(srv.URL, token)
 	if err != nil {
-		t.Fatalf("GET unsubscribe: %v", err)
+		t.Fatalf("POST unsubscribe: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -277,9 +278,9 @@ func TestUnsubscribe_Idempotent(t *testing.T) {
 	token := tracking.GenerateUnsubscribeToken(sub.ID, campaign.ID, testutil.TestAppSecret)
 
 	for i := 0; i < 2; i++ {
-		resp, err := http.Get(srv.URL + "/unsubscribe?token=" + token)
+		resp, err := postOneClickUnsubscribe(srv.URL, token)
 		if err != nil {
-			t.Fatalf("hit %d GET unsubscribe: %v", i, err)
+			t.Fatalf("hit %d POST unsubscribe: %v", i, err)
 		}
 		resp.Body.Close()
 		testutil.AssertStatus(t, resp, http.StatusOK)
@@ -315,6 +316,34 @@ func TestUnsubscribe_AlreadyUnsubscribed_Returns200(t *testing.T) {
 
 	token := tracking.GenerateUnsubscribeToken(sub.ID, campaign.ID, testutil.TestAppSecret)
 
+	resp, err := postOneClickUnsubscribe(srv.URL, token)
+	if err != nil {
+		t.Fatalf("POST unsubscribe: %v", err)
+	}
+	defer resp.Body.Close()
+
+	testutil.AssertStatus(t, resp, http.StatusOK)
+}
+
+// postOneClickUnsubscribe sends the RFC 8058 one-click request a mail client makes.
+func postOneClickUnsubscribe(baseURL, token string) (*http.Response, error) {
+	return http.Post(baseURL+"/unsubscribe?token="+token,
+		"application/x-www-form-urlencoded", strings.NewReader("List-Unsubscribe=One-Click"))
+}
+
+func TestUnsubscribe_GetShowsConfirmAndDoesNotUnsubscribe(t *testing.T) {
+	pool, db, cleanup := testutil.NewTestDB(t)
+	t.Cleanup(cleanup)
+	srv, srvCleanup := testutil.NewTestServer(t, db, pool)
+	t.Cleanup(srvCleanup)
+
+	testutil.CreateOwner(t, db)
+	sub := testutil.CreateSubscriber(t, db, "scanner@example.com")
+	list := testutil.CreateList(t, db, "Scanner List")
+	campaign := testutil.CreateCampaign(t, db, list.ID)
+
+	token := tracking.GenerateUnsubscribeToken(sub.ID, campaign.ID, testutil.TestAppSecret)
+
 	resp, err := http.Get(srv.URL + "/unsubscribe?token=" + token)
 	if err != nil {
 		t.Fatalf("GET unsubscribe: %v", err)
@@ -322,4 +351,23 @@ func TestUnsubscribe_AlreadyUnsubscribed_Returns200(t *testing.T) {
 	defer resp.Body.Close()
 
 	testutil.AssertStatus(t, resp, http.StatusOK)
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `method="post"`) || !strings.Contains(string(body), token) {
+		t.Fatalf("expected confirm form posting the token, got %s", body)
+	}
+
+	updated, err := db.GetSubscriberByID(context.Background(), sub.ID)
+	if err != nil {
+		t.Fatalf("get subscriber: %v", err)
+	}
+	if updated.Status != "active" {
+		t.Fatalf("expected GET to leave subscriber active, got %s", updated.Status)
+	}
+	suppressed, err := db.IsSuppressed(context.Background(), sub.Email)
+	if err != nil {
+		t.Fatalf("check suppression: %v", err)
+	}
+	if suppressed {
+		t.Fatal("expected no suppression row after GET")
+	}
 }

@@ -53,7 +53,8 @@ func NewTestServer(t *testing.T, db *sqlcdb.Queries, pool *pgxpool.Pool) (*httpt
 	r.With(middleware.RequireAuth(TestAppSecret, db)).Get("/api/auth/me", authHandler.Me)
 
 	r.Get("/confirm", listHandler.ConfirmOptIn)
-	r.Get("/unsubscribe", trackingHandler.Unsubscribe)
+	r.Get("/unsubscribe", trackingHandler.UnsubscribePage)
+	r.Post("/unsubscribe", trackingHandler.Unsubscribe)
 	r.Get("/track/open/{token}", trackingHandler.Open)
 	r.Get("/track/click/{token}", trackingHandler.Click)
 	r.Post("/webhooks/resend", webhookHandler.Resend)

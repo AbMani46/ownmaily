@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 
 const unsubscribeErrorPage = `<html><body><h1>Invalid unsubscribe link</h1><p>This link is invalid or has already been used.</p></body></html>`
 const unsubscribeSuccessPage = `<html><body><h1>You have been unsubscribed</h1><p>You will no longer receive emails from this sender.</p></body></html>`
+const unsubscribeConfirmPage = `<html><body><h1>Unsubscribe</h1><p>Click the button below to stop receiving emails from this sender.</p><form method="post" action="/unsubscribe?token=%s"><button type="submit">Unsubscribe</button></form></body></html>`
 
 type TrackingHandler struct {
 	db        *db.Queries
@@ -90,6 +93,22 @@ func (h *TrackingHandler) Click(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, decoded, http.StatusFound)
 }
 
+// UnsubscribePage handles GET /unsubscribe. It only shows a confirm button that
+// POSTs back, so link scanners that follow URLs in emails don't unsubscribe people.
+func (h *TrackingHandler) UnsubscribePage(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+
+	if _, _, err := tracking.ParseUnsubscribeToken(token, h.appSecret); err != nil {
+		log.Printf("unsubscribe: invalid token: %v", err)
+		serveHTML(w, http.StatusBadRequest, unsubscribeErrorPage)
+		return
+	}
+
+	serveHTML(w, http.StatusOK, fmt.Sprintf(unsubscribeConfirmPage, html.EscapeString(url.QueryEscape(token))))
+}
+
+// Unsubscribe handles POST /unsubscribe, from the confirm button or from a mail
+// client's one-click unsubscribe (List-Unsubscribe-Post, RFC 8058).
 func (h *TrackingHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 
