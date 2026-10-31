@@ -38,7 +38,7 @@ func NewTestServer(t *testing.T, db *sqlcdb.Queries, pool *pgxpool.Pool) (*httpt
 	webhookHandler := handler.NewWebhookHandler(db)
 	authHandler := handler.NewAuthHandler(db, TestAppSecret, installationURL)
 	subscriberHandler := handler.NewSubscriberHandler(db)
-	confirmMailer := mailer.NewConfirmationMailer(db, installationURL, TestAppSecret)
+	confirmMailer := mailer.NewConfirmationMailer(db, mailerStore, installationURL, TestAppSecret)
 	listHandler := handler.NewListHandler(db, confirmMailer)
 	tagHandler := handler.NewTagHandler(db)
 	campaignHandler := handler.NewCampaignHandler(db, installationURL, TestAppSecret, sendWorker)

@@ -436,39 +436,43 @@ func (h *ListHandler) BulkAddSubscribers(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"added": added})
 }
 
+const confirmSuccessPage = `<html><body><h1>Subscription confirmed</h1><p>Thanks for confirming. You are now subscribed.</p></body></html>`
+const confirmInvalidPage = `<html><body><h1>Invalid confirmation link</h1><p>This link is invalid or has expired.</p></body></html>`
+const confirmErrorPage = `<html><body><h1>Something went wrong</h1><p>We could not confirm your subscription. Please try again later.</p></body></html>`
+
 func (h *ListHandler) ConfirmOptIn(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	sidStr := r.URL.Query().Get("sid")
 	lidStr := r.URL.Query().Get("lid")
 
 	if token == "" || sidStr == "" || lidStr == "" {
-		writeError(w, http.StatusBadRequest, "invalid_token", "Confirmation link is invalid or expired")
+		serveHTML(w, http.StatusBadRequest, confirmInvalidPage)
 		return
 	}
 
 	subID, err := parseUUID(sidStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_token", "Confirmation link is invalid or expired")
+		serveHTML(w, http.StatusBadRequest, confirmInvalidPage)
 		return
 	}
 
 	listID, err := parseUUID(lidStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_token", "Confirmation link is invalid or expired")
+		serveHTML(w, http.StatusBadRequest, confirmInvalidPage)
 		return
 	}
 
 	if !h.mailer.ValidateToken(token, subID, listID) {
-		writeError(w, http.StatusBadRequest, "invalid_token", "Confirmation link is invalid or expired")
+		serveHTML(w, http.StatusBadRequest, confirmInvalidPage)
 		return
 	}
 
 	if _, err := h.db.GetSubscriberByID(r.Context(), subID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "subscriber not found")
+			serveHTML(w, http.StatusNotFound, confirmInvalidPage)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		serveHTML(w, http.StatusInternalServerError, confirmErrorPage)
 		return
 	}
 
@@ -477,11 +481,11 @@ func (h *ListHandler) ConfirmOptIn(w http.ResponseWriter, r *http.Request) {
 		SubscriberID: subID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		serveHTML(w, http.StatusInternalServerError, confirmErrorPage)
 		return
 	}
 	if !inList {
-		writeError(w, http.StatusBadRequest, "not_found", "Subscription not found")
+		serveHTML(w, http.StatusBadRequest, confirmInvalidPage)
 		return
 	}
 
@@ -489,9 +493,9 @@ func (h *ListHandler) ConfirmOptIn(w http.ResponseWriter, r *http.Request) {
 		ID:     subID,
 		Status: "active",
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "server error")
+		serveHTML(w, http.StatusInternalServerError, confirmErrorPage)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Email confirmed. You are now subscribed."})
+	serveHTML(w, http.StatusOK, confirmSuccessPage)
 }

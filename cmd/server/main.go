@@ -59,7 +59,7 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(queries)
 	authHandler := handler.NewAuthHandler(queries, cfg.AppSecret, cfg.InstallationURL)
 	subscriberHandler := handler.NewSubscriberHandler(queries)
-	confirmMailer := mailer.NewConfirmationMailer(queries, cfg.InstallationURL, cfg.AppSecret)
+	confirmMailer := mailer.NewConfirmationMailer(queries, mailerStore, cfg.InstallationURL, cfg.AppSecret)
 	listHandler := handler.NewListHandler(queries, confirmMailer)
 	embedHandler := handler.NewEmbedHandler(queries, cfg.InstallationURL, confirmMailer)
 	tagHandler := handler.NewTagHandler(queries)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/AbMani46/ownmaily/internal/mailer"
@@ -384,7 +385,7 @@ func TestDoubleOptIn_ConfirmationFlow(t *testing.T) {
 	}
 
 	// Generate a valid confirmation token using the same secret the server uses.
-	cm := mailer.NewConfirmationMailer(db, srv.URL, testutil.TestAppSecret)
+	cm := mailer.NewConfirmationMailer(db, nil, srv.URL, testutil.TestAppSecret)
 	tok := cm.GenerateToken(sub.ID, list.ID)
 
 	confirmURL := fmt.Sprintf("/confirm?token=%s&sid=%s&lid=%s",
@@ -393,6 +394,9 @@ func TestDoubleOptIn_ConfirmationFlow(t *testing.T) {
 	defer confirmResp.Body.Close()
 
 	testutil.AssertStatus(t, confirmResp, http.StatusOK)
+	if ct := confirmResp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("expected HTML confirm page, got Content-Type %q", ct)
+	}
 
 	confirmed, err := db.GetSubscriberByID(context.Background(), sub.ID)
 	if err != nil {
@@ -400,5 +404,24 @@ func TestDoubleOptIn_ConfirmationFlow(t *testing.T) {
 	}
 	if confirmed.Status != "active" {
 		t.Fatalf("expected status=active after confirmation, got %q", confirmed.Status)
+	}
+}
+
+func TestConfirmOptIn_InvalidToken_ReturnsHTML(t *testing.T) {
+	pool, db, cleanup := testutil.NewTestDB(t)
+	t.Cleanup(cleanup)
+	srv, srvCleanup := testutil.NewTestServer(t, db, pool)
+	t.Cleanup(srvCleanup)
+
+	sub := testutil.CreateSubscriber(t, db, "badconfirm@test.com")
+	list := testutil.CreateList(t, db, "badconfirm-list")
+
+	resp := testutil.MakeRequest(t, srv, "GET", fmt.Sprintf("/confirm?token=bad.token&sid=%s&lid=%s",
+		testutil.UUIDString(sub.ID), testutil.UUIDString(list.ID)), nil, nil)
+	defer resp.Body.Close()
+
+	testutil.AssertStatus(t, resp, http.StatusBadRequest)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("expected HTML error page, got Content-Type %q", ct)
 	}
 }

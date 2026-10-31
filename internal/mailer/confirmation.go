@@ -1,11 +1,12 @@
 package mailer
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"log"
+	"html"
 	"strconv"
 	"strings"
 	"time"
@@ -17,12 +18,13 @@ import (
 
 type ConfirmationMailer struct {
 	db              *db.Queries
+	store           *Store
 	installationURL string
 	appSecret       string
 }
 
-func NewConfirmationMailer(q *db.Queries, installationURL, appSecret string) *ConfirmationMailer {
-	return &ConfirmationMailer{db: q, installationURL: installationURL, appSecret: appSecret}
+func NewConfirmationMailer(q *db.Queries, store *Store, installationURL, appSecret string) *ConfirmationMailer {
+	return &ConfirmationMailer{db: q, store: store, installationURL: installationURL, appSecret: appSecret}
 }
 
 // GenerateToken builds a self-contained signed token encoding subscriberID:listID:unixTimestamp.
@@ -71,13 +73,42 @@ func (m *ConfirmationMailer) ValidateToken(token string, subscriberID, listID pg
 	return segs[0] == uuidToString(subscriberID) && segs[1] == uuidToString(listID)
 }
 
+// SendConfirmation emails a double opt-in link through the configured mailer,
+// using the from address and installation URL saved in settings.
 func (m *ConfirmationMailer) SendConfirmation(subscriberID, listID pgtype.UUID, email string) error {
+	s, err := m.db.GetSettings(context.Background())
+	if err != nil {
+		return fmt.Errorf("confirmation: load settings: %w", err)
+	}
+
+	installationURL := m.installationURL
+	if s.InstallationUrl != "" {
+		installationURL = s.InstallationUrl
+	}
+
+	from := s.FromEmail
+	if from == "" {
+		from = "no-reply@ownmaily.local"
+	} else if s.FromName != "" {
+		from = fmt.Sprintf("%s <%s>", s.FromName, s.FromEmail)
+	}
+
 	token := m.GenerateToken(subscriberID, listID)
 	confirmURL := fmt.Sprintf("%s/confirm?token=%s&sid=%s&lid=%s",
-		m.installationURL, token, uuidToString(subscriberID), uuidToString(listID))
+		installationURL, token, uuidToString(subscriberID), uuidToString(listID))
 
-	// TODO Session 9: replace with real SMTP send
-	log.Printf("CONFIRMATION EMAIL to %s: %s", email, confirmURL)
+	msg := Message{
+		To:       email,
+		From:     from,
+		ReplyTo:  s.ReplyTo,
+		Subject:  "Please confirm your subscription",
+		TextBody: "Please confirm your subscription by opening this link:\n\n" + confirmURL + "\n\nIf you did not sign up, you can ignore this email.",
+		HTMLBody: fmt.Sprintf(`<p>Please confirm your subscription.</p><p><a href="%s">Confirm subscription</a></p><p>If you did not sign up, you can ignore this email.</p>`,
+			html.EscapeString(confirmURL)),
+	}
+	if err := m.store.Get().Send(msg); err != nil {
+		return fmt.Errorf("confirmation: send to %s: %w", email, err)
+	}
 	return nil
 }
 
