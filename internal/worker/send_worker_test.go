@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/time/rate"
 
 	"github.com/AbMani46/ownmaily/internal/mailer"
 	sqlc "github.com/AbMani46/ownmaily/internal/sqlc"
@@ -228,5 +229,61 @@ func TestSendWorker_HandlesWorkerFailure(t *testing.T) {
 	}
 	if gotCampaign.Status != "sent" {
 		t.Fatalf("expected campaign status=sent after job completes, got %q", gotCampaign.Status)
+	}
+}
+
+func TestSendWorker_SendsAllBatches(t *testing.T) {
+	pool, queries, cleanup := newWorkerTestDB(t)
+	t.Cleanup(cleanup)
+	_ = pool
+
+	ctx := context.Background()
+
+	list := wCreateList(t, queries, "batch-list")
+
+	// More than two full batches of 100, so a skipped batch would show up.
+	const total = 250
+	for i := 0; i < total; i++ {
+		sub := wCreateSubscriber(t, queries, fmt.Sprintf("batch%d@test.com", i))
+		if err := queries.AddSubscriberToList(ctx, sqlc.AddSubscriberToListParams{
+			ListID:       list.ID,
+			SubscriberID: sub.ID,
+		}); err != nil {
+			t.Fatalf("add subscriber %d to list: %v", i, err)
+		}
+	}
+
+	campaign := wCreateCampaign(t, queries, list.ID)
+
+	job, err := queries.CreateSendJob(ctx, campaign.ID)
+	if err != nil {
+		t.Fatalf("create send job: %v", err)
+	}
+
+	mailerStore := mailer.NewStore(&mailer.LogMailer{})
+	w := NewSendWorker(queries, mailerStore, "http://localhost:4400", workerTestSecret)
+	w.limiter = rate.NewLimiter(rate.Inf, 1)
+
+	if err := w.processJob(ctx, job); err != nil {
+		t.Fatalf("processJob: %v", err)
+	}
+
+	gotJob, err := queries.GetSendJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get send job: %v", err)
+	}
+	if gotJob.SentCount != total {
+		t.Fatalf("expected sent_count=%d, got %d", total, gotJob.SentCount)
+	}
+
+	pending, err := queries.CountRecipientsByStatus(ctx, sqlc.CountRecipientsByStatusParams{
+		CampaignID: campaign.ID,
+		Status:     "pending",
+	})
+	if err != nil {
+		t.Fatalf("count pending recipients: %v", err)
+	}
+	if pending != 0 {
+		t.Fatalf("expected 0 pending recipients, got %d", pending)
 	}
 }
