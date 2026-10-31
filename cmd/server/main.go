@@ -91,7 +91,8 @@ func main() {
 	r.With(middleware.RequireAuth(cfg.AppSecret, queries)).Get("/api/auth/me", authHandler.Me)
 
 	r.Get("/confirm", listHandler.ConfirmOptIn)
-	r.Get("/unsubscribe", trackingHandler.Unsubscribe)
+	r.Get("/unsubscribe", trackingHandler.UnsubscribePage)
+	r.Post("/unsubscribe", trackingHandler.Unsubscribe)
 	r.Get("/track/open/{token}", trackingHandler.Open)
 	r.Get("/track/click/{token}", trackingHandler.Click)
 	r.Post("/webhooks/resend", webhookHandler.Resend)
