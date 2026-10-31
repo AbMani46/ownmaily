@@ -129,6 +129,8 @@ func (h *SetupHandler) UpdateSMTP(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Provider    string          `json:"provider"`
 		Credentials json.RawMessage `json:"credentials"`
+		FromEmail   string          `json:"from_email"`
+		FromName    string          `json:"from_name"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -140,6 +142,10 @@ func (h *SetupHandler) UpdateSMTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_provider", "provider must be one of: resend, mailgun, ses")
 		return
 	}
+	if body.FromEmail != "" && !strings.Contains(body.FromEmail, "@") {
+		writeError(w, http.StatusBadRequest, "invalid_email", "valid from email required")
+		return
+	}
 
 	credJSON := string(body.Credentials)
 	m, err := mailer.NewMailer(body.Provider, credJSON)
@@ -148,7 +154,28 @@ func (h *SetupHandler) UpdateSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.UpdateSMTPSettings(r.Context(), db.UpdateSMTPSettingsParams{
+	current, err := h.db.GetSettings(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load settings")
+		return
+	}
+
+	fromEmail, fromName := current.FromEmail, current.FromName
+	if body.FromEmail != "" {
+		fromEmail = body.FromEmail
+	}
+	if body.FromName != "" {
+		fromName = body.FromName
+	}
+
+	if _, err := h.db.UpdateSettings(r.Context(), db.UpdateSettingsParams{
+		SiteName:        current.SiteName,
+		InstallationUrl: current.InstallationUrl,
+		Timezone:        current.Timezone,
+		PhysicalAddress: current.PhysicalAddress,
+		FromName:        fromName,
+		FromEmail:       fromEmail,
+		ReplyTo:         current.ReplyTo,
 		SmtpProvider:    body.Provider,
 		SmtpCredentials: []byte(credJSON),
 	}); err != nil {
@@ -191,6 +218,8 @@ func (h *SetupHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
 	from := s.FromEmail
 	if from == "" {
 		from = "no-reply@ownmaily.local"
+	} else if s.FromName != "" {
+		from = s.FromName + " <" + s.FromEmail + ">"
 	}
 
 	msg := mailer.Message{
