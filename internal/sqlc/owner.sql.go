@@ -58,3 +58,29 @@ func (q *Queries) UpdateOwnerPassword(ctx context.Context, passwordHash string) 
 	_, err := q.db.Exec(ctx, updateOwnerPassword, passwordHash)
 	return err
 }
+
+const upsertOwner = `-- name: UpsertOwner :one
+INSERT INTO owner (email, password_hash)
+VALUES ($1, $2)
+ON CONFLICT (id) DO UPDATE
+SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, updated_at = NOW()
+RETURNING id, email, password_hash, created_at, updated_at
+`
+
+type UpsertOwnerParams struct {
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+}
+
+func (q *Queries) UpsertOwner(ctx context.Context, arg UpsertOwnerParams) (Owner, error) {
+	row := q.db.QueryRow(ctx, upsertOwner, arg.Email, arg.PasswordHash)
+	var i Owner
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
