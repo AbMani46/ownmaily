@@ -66,7 +66,9 @@ func (h *SetupHandler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner, err := h.db.CreateOwner(r.Context(), db.CreateOwnerParams{
+	// Upsert so going back to this step and resubmitting replaces the owner
+	// instead of failing on the single-row owner table.
+	owner, err := h.db.UpsertOwner(r.Context(), db.UpsertOwnerParams{
 		Email:        body.Email,
 		PasswordHash: hash,
 	})
@@ -224,11 +226,8 @@ func (h *SetupHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.SetSetupComplete(r.Context()); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "could not complete setup")
-		return
-	}
-
+	// Check the owner before marking setup complete, so setup can never
+	// finish without an owner account.
 	owner, err := h.db.GetOwner(r.Context())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -236,6 +235,11 @@ func (h *SetupHandler) Complete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not load owner")
+		return
+	}
+
+	if err := h.db.SetSetupComplete(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not complete setup")
 		return
 	}
 
