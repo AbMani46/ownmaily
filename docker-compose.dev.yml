@@ -1,0 +1,25 @@
+# Local development database.
+# Postgres listens on localhost:5433 so it does not clash with a system Postgres.
+# Matches the defaults used by the Go test helpers (TEST_DB_URL) and Taskfile.yml.
+#
+# Start:  task docker-dev   (or: docker compose -f docker-compose.dev.yml up -d)
+# DB_URL for .env: postgres://ownmaily:ownmaily@localhost:5433/ownmaily?sslmode=disable
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ownmaily
+      POSTGRES_PASSWORD: ownmaily
+      POSTGRES_DB: ownmaily
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ownmaily"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
